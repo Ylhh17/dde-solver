@@ -1,29 +1,19 @@
-### IntelliJ IDEA ###
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
+# Maven
+/target/
 
-### Eclipse ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
+# IntelliJ IDEA
+/.idea/
+*.iml
+/out/
 
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
+# JVM crash reports and recordings
+hs_err_pid*.log
+hs_err_pid*.jfr
+replay_pid*.log
 
-### VS Code ###
-.vscode/
-
-### Mac OS ###
+# Operating systems
 .DS_Store
+Thumbs.db
+
+# Application exports
+*.csv
