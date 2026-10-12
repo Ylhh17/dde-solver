@@ -4,12 +4,14 @@ import net.objecthunter.exp4j.Expression;
 import net.objecthunter.exp4j.ExpressionBuilder;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.DoubleUnaryOperator;
 
 public class DDESolver {
 
-    private double tau = 1.0; // задержка - теперь поле класса
+    private static final double EPS = 1e-12;
 
     public enum Method {
         EULER,
@@ -17,169 +19,271 @@ public class DDESolver {
         ADAMS_BASHFORTH_2
     }
 
-    private String phiExprStr = "1";
     private final List<Double> tList = new ArrayList<>();
     private final List<Double> yList = new ArrayList<>();
-    private DoubleUnaryOperator phi = t -> 1.0;
-    // Строка-выражение задаёт правую часть уравнения (гибко)
-    private String expressionStr = "a * y_tau1"; // значение по умолчанию
-    private double tau2 = 0;
 
-    public void setInitialFunctionExpression(String expr) {
-        this.phiExprStr = expr;
+    private String phiExprStr = "1";
+    private String expressionStr = "a * y_tau1";
+    private Expression phiExpression = buildPhiExpression(phiExprStr);
+    private Expression rhsExpression = buildRhsExpression(expressionStr);
+    private DoubleUnaryOperator initialFunction;
+
+    private double tau = 1.0;
+    private double tau2 = 0.0;
+
+    public void setInitialFunctionExpression(String expression) {
+        String normalized = requireExpression(expression, "Начальная функция");
+        this.phiExpression = buildPhiExpression(normalized);
+        this.phiExprStr = normalized;
+        this.initialFunction = null;
     }
 
-    public void setInitialFunction(DoubleUnaryOperator phi) {
-        this.phi = phi;
+    public void setInitialFunction(DoubleUnaryOperator function) {
+        this.initialFunction = Objects.requireNonNull(function, "Начальная функция не должна быть null");
     }
 
-    public void setExpression(String expr) {
-        this.expressionStr = expr;
+    public void setExpression(String expression) {
+        String normalized = requireExpression(expression, "Правая часть уравнения");
+        this.rhsExpression = buildRhsExpression(normalized);
+        this.expressionStr = normalized;
     }
 
     public void setTau2(double tau2) {
+        requireFinite(tau2, "Вторая задержка");
+        if (tau2 < 0.0) {
+            throw new IllegalArgumentException("Вторая задержка не может быть отрицательной");
+        }
         this.tau2 = tau2;
     }
 
-    public List<Double> getTList() { return tList; }
-    public List<Double> getYList() { return yList; }
-
-    // Исправлено: для t < 0 возвращаем 0, иначе считаем phi(t)
-    private double getPhi(double t) {
-        if (t < 0) return 0.0; // вне области — 0
-        try { // иначе вычисляем значение выражения phi для данного t
-            Expression expr = new ExpressionBuilder(phiExprStr)
-                    .variable("t")
-                    .build()
-                    .setVariable("t", t);
-            return expr.evaluate();
-        } catch (Exception e) {
-            System.err.println("Ошибка в выражении φ(t): " + e.getMessage());
-            return 1.0; // fallback
-        }
+    public List<Double> getTList() {
+        return Collections.unmodifiableList(tList);
     }
 
-
-    // Вычисление правой части уравнения с задержками (универсально)
-    private double f(double t, double y, double yTau1, double yTau2, double a) {
-        try {
-            Expression expr = new ExpressionBuilder(expressionStr)
-                    .variables("t", "y", "y_tau1", "y_tau2", "a")
-                    .build()
-                    .setVariable("t", t) // t — текущее время
-                    .setVariable("y", y) // y — текущее значение
-                    .setVariable("y_tau1", yTau1) // yTau1 — значение с задержкой tau
-                    .setVariable("y_tau2", yTau2) // yTau2 — значение с задержкой tau2
-                    .setVariable("a", a); // a — параметр уравнения
-            return expr.evaluate();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return 0;
-        }
+    public List<Double> getYList() {
+        return Collections.unmodifiableList(yList);
     }
-
-
 
     public void solve(Method method, double a, double tau, double h, double tMax) {
+        validateParameters(method, a, tau, h, tMax);
+        this.tau = tau;
+
         tList.clear();
         yList.clear();
-        this.tau = tau; // сохраняем tau в поле для использования везде
+        appendPoint(0.0, history(0.0));
+
+        if (tMax == 0.0) {
+            return;
+        }
 
         switch (method) {
             case EULER -> solveEuler(a, h, tMax);
-            case RUNGE_KUTTA_4 -> solveRK4(a, h, tMax);
-            case ADAMS_BASHFORTH_2 -> solveAdams(a, h, tMax);
+            case RUNGE_KUTTA_4 -> solveRungeKutta4(a, h, tMax);
+            case ADAMS_BASHFORTH_2 -> solveAdamsBashforth2(a, h, tMax);
         }
     }
-    // Метод Эйлера для DDE
+
     private void solveEuler(double a, double h, double tMax) {
-        int steps = (int)(tMax / h);
-        for (int i = 0; i <= steps; i++) {
-            double t = i * h;
-            double y;
-            if (t <= tau) {
-                y = getPhi(t);// начальная функция на интервале [0, tau]
+        while (lastTime() < tMax - EPS) {
+            double t = lastTime();
+            double y = lastValue();
+            double step = Math.min(h, tMax - t);
+            double nextY = y + step * derivative(t, y, a);
+            appendPoint(nextTime(t, step, tMax), nextY);
+        }
+    }
+
+    private void solveRungeKutta4(double a, double h, double tMax) {
+        while (lastTime() < tMax - EPS) {
+            double t = lastTime();
+            double y = lastValue();
+            double step = Math.min(h, tMax - t);
+            appendPoint(nextTime(t, step, tMax), rungeKuttaStep(t, y, step, a));
+        }
+    }
+
+    private void solveAdamsBashforth2(double a, double h, double tMax) {
+        double t0 = lastTime();
+        double y0 = lastValue();
+        double firstStep = Math.min(h, tMax - t0);
+        double previousDerivative = derivative(t0, y0, a);
+        appendPoint(nextTime(t0, firstStep, tMax), rungeKuttaStep(t0, y0, firstStep, a));
+
+        double previousStep = firstStep;
+        while (lastTime() < tMax - EPS) {
+            double t = lastTime();
+            double y = lastValue();
+            double step = Math.min(h, tMax - t);
+            double currentDerivative = derivative(t, y, a);
+            double nextY;
+
+            if (approximatelyEqual(step, h) && approximatelyEqual(previousStep, h)) {
+                nextY = y + step * (3.0 * currentDerivative - previousDerivative) / 2.0;
             } else {
-                double yTau1 = getYAt(t - tau, h); // y(t - tau), с интерполяцией
-                double yTau2 = getYAt(t - tau2, h); // y(t - tau2), если есть вторая задержка
-                double yPrev = yList.get(i - 1); // предыдущее значение y(t)
-                y = yPrev + h * f(t, yPrev, yTau1, yTau2, a); // шаг Эйлера
+                nextY = rungeKuttaStep(t, y, step, a);
             }
 
-            tList.add(t); // записываем время
-            yList.add(y); // записываем результат
+            appendPoint(nextTime(t, step, tMax), nextY);
+            previousDerivative = currentDerivative;
+            previousStep = step;
         }
     }
-    // Метод Рунге-Кутты 4 порядка для DDE
-    private void solveRK4(double a, double h, double tMax) {
-        int steps = (int)(tMax / h);
-        for (int i = 0; i <= steps; i++) {
-            double t = i * h;
-            double y;
-            if (t <= tau) {
-                y = getPhi(t);// начальная функция
-            } else {
-                double yPrev = yList.get(i - 1);
-                // k1: на текущем шаге
-                double k1 = f(t, yPrev, getYAt(t - tau, h), getYAt(t - tau2, h), a);
-                double k2 = f(t + h / 2, yPrev + h * k1 / 2, // k2: на середине шага
-                        getYAt(t + h / 2 - tau, h), getYAt(t + h / 2 - tau2, h), a);
-                double k3 = f(t + h / 2, yPrev + h * k2 / 2,
-                        getYAt(t + h / 2 - tau, h), getYAt(t + h / 2 - tau2, h), a);
-                double k4 = f(t + h, yPrev + h * k3,  // k4: на конце шага
-                        getYAt(t + h - tau, h), getYAt(t + h - tau2, h), a);
-                y = yPrev + (h / 6) * (k1 + 2 * k2 + 2 * k3 + k4);
-            }
-            tList.add(t);
-            yList.add(y);
+
+    private double rungeKuttaStep(double t, double y, double h, double a) {
+        double k1 = derivative(t, y, a);
+        double k2 = derivative(t + h / 2.0, y + h * k1 / 2.0, a);
+        double k3 = derivative(t + h / 2.0, y + h * k2 / 2.0, a);
+        double k4 = derivative(t + h, y + h * k3, a);
+        return y + h * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0;
+    }
+
+    private double derivative(double t, double y, double a) {
+        double yTau1 = valueAt(t - tau);
+        double yTau2 = tau2 == 0.0 ? y : valueAt(t - tau2);
+
+        try {
+            double result = rhsExpression
+                    .setVariable("t", t)
+                    .setVariable("y", y)
+                    .setVariable("y_tau1", yTau1)
+                    .setVariable("y_tau2", yTau2)
+                    .setVariable("a", a)
+                    .evaluate();
+            requireFinite(result, "Значение правой части");
+            return result;
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(
+                    "Не удалось вычислить правую часть '" + expressionStr + "' при t=" + t,
+                    exception
+            );
         }
     }
-    // Метод Адамса-Бэшфорта второго порядка
-    private void solveAdams(double a, double h, double tMax) {
-        int steps = (int)(tMax / h);
 
-        // 1. Заполняем t ∈ [0, tau] начальными значениями phi(t)
-        int nInit = (int)(tau / h);
-        for (int i = 0; i <= nInit; i++) {
-            double t = i * h;
-            tList.add(t);
-            yList.add(getPhi(t));
-        }
-
-        // 2. Первые 2 точки после tau считаем по Эйлеру (или RK4)
-        for (int i = nInit+1; i <= nInit+2; i++) {
-            double t = i * h;
-            double yPrev = yList.get(i-1);
-            double yTau1 = getYAt(t - tau, h);
-            double yTau2 = getYAt(t - tau2, h);
-            double y = yPrev + h * f(t, yPrev, yTau1, yTau2, a);
-            tList.add(t);
-            yList.add(y);
-        }
-
-        // 3. Основной шаг Адамса-Бэшфорта
-        for (int i = nInit+3; i <= steps; i++) {
-            double t = i * h;
-            double f_n = f(t, yList.get(i - 1), getYAt(t - tau, h), getYAt(t - tau2, h), a);
-            double f_n1 = f(t - h, yList.get(i - 2), getYAt(t - h - tau, h), getYAt(t - h - tau2, h), a);
-            double y = yList.get(i - 1) + h / 2 * (3 * f_n - f_n1);
-
-            tList.add(t);
-            yList.add(y);
+    private double history(double t) {
+        try {
+            double result = initialFunction != null
+                    ? initialFunction.applyAsDouble(t)
+                    : phiExpression.setVariable("t", t).evaluate();
+            requireFinite(result, "Значение начальной функции");
+            return result;
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException(
+                    "Не удалось вычислить начальную функцию '" + phiExprStr + "' при t=" + t,
+                    exception
+            );
         }
     }
-    // Интерполяция значения y(tau) между точками
-    private double getYAt(double t, double h) {
-        if (t <= 0) return getPhi(t); // если t <= 0, возвращаем начальное условие
-        int index = (int)(t / h);
-        if (index >= yList.size() - 1) return yList.get(yList.size() - 1); // если вне сетки — последнее значение
-        // Линейная интерполяция между ближайшими значениями
-        double t1 = tList.get(index);
-        double t2 = tList.get(index + 1);
-        double y1 = yList.get(index);
-        double y2 = yList.get(index + 1);
+
+    private double valueAt(double t) {
+        if (t <= 0.0) {
+            return history(t);
+        }
+        if (tList.isEmpty()) {
+            throw new IllegalStateException("Решение ещё не содержит вычисленных точек");
+        }
+
+        double latestTime = lastTime();
+        double tolerance = EPS * Math.max(1.0, Math.abs(latestTime));
+        if (t > latestTime + tolerance) {
+            throw new IllegalStateException(
+                    "Для вычисления требуется ещё не найденное значение y(" + t + "). " +
+                    "Уменьшите шаг так, чтобы он не превышал положительные задержки."
+            );
+        }
+        if (Math.abs(t - latestTime) <= tolerance) {
+            return lastValue();
+        }
+
+        int index = Collections.binarySearch(tList, t);
+        if (index >= 0) {
+            return yList.get(index);
+        }
+
+        int right = -index - 1;
+        int left = right - 1;
+        double t1 = tList.get(left);
+        double t2 = tList.get(right);
+        double y1 = yList.get(left);
+        double y2 = yList.get(right);
         return y1 + (y2 - y1) * (t - t1) / (t2 - t1);
     }
+
+    private void validateParameters(Method method, double a, double tau, double h, double tMax) {
+        Objects.requireNonNull(method, "Численный метод не выбран");
+        requireFinite(a, "Параметр a");
+        requireFinite(tau, "Задержка");
+        requireFinite(h, "Шаг");
+        requireFinite(tMax, "Конец интервала");
+
+        if (tau <= 0.0) {
+            throw new IllegalArgumentException("Задержка должна быть больше нуля");
+        }
+        if (h <= 0.0) {
+            throw new IllegalArgumentException("Шаг должен быть больше нуля");
+        }
+        if (tMax < 0.0) {
+            throw new IllegalArgumentException("Конец интервала не может быть отрицательным");
+        }
+        if (h > tau + EPS) {
+            throw new IllegalArgumentException("Шаг не должен превышать первую задержку");
+        }
+        if (tau2 > 0.0 && h > tau2 + EPS) {
+            throw new IllegalArgumentException("Шаг не должен превышать вторую задержку");
+        }
+    }
+
+    private void appendPoint(double t, double y) {
+        requireFinite(t, "Время");
+        requireFinite(y, "Значение решения");
+        tList.add(t);
+        yList.add(y);
+    }
+
+    private double lastTime() {
+        return tList.get(tList.size() - 1);
+    }
+
+    private double lastValue() {
+        return yList.get(yList.size() - 1);
+    }
+
+    private static double nextTime(double t, double step, double tMax) {
+        double candidate = t + step;
+        return Math.abs(candidate - tMax) <= EPS * Math.max(1.0, Math.abs(tMax)) ? tMax : candidate;
+    }
+
+    private static boolean approximatelyEqual(double first, double second) {
+        return Math.abs(first - second) <= EPS * Math.max(1.0, Math.max(Math.abs(first), Math.abs(second)));
+    }
+
+    private static String requireExpression(String expression, String name) {
+        if (expression == null || expression.isBlank()) {
+            throw new IllegalArgumentException(name + " не может быть пустой");
+        }
+        return expression.trim();
+    }
+
+    private static void requireFinite(double value, String name) {
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException(name + " должно быть конечным числом");
+        }
+    }
+
+    private static Expression buildPhiExpression(String expression) {
+        try {
+            return new ExpressionBuilder(expression).variable("t").build();
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Некорректная начальная функция: " + expression, exception);
+        }
+    }
+
+    private static Expression buildRhsExpression(String expression) {
+        try {
+            return new ExpressionBuilder(expression)
+                    .variables("t", "y", "y_tau1", "y_tau2", "a")
+                    .build();
+        } catch (RuntimeException exception) {
+            throw new IllegalArgumentException("Некорректная правая часть: " + expression, exception);
+        }
+    }
 }
-
-
