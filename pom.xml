@@ -54,6 +54,9 @@
                 <version>0.0.8</version>
                 <configuration>
                     <mainClass>dde.Main</mainClass>
+                    <options>
+                        <option>--enable-native-access=javafx.graphics</option>
+                    </options>
                 </configuration>
             </plugin>
         </plugins>

@@ -64,6 +64,11 @@ public class DDESolver {
         return Collections.unmodifiableList(yList);
     }
 
+    public NumericalSolution solveResult(Method method, double a, double tau, double h, double tMax) {
+        solve(method, a, tau, h, tMax);
+        return new NumericalSolution(method, tList, yList);
+    }
+
     public void solve(Method method, double a, double tau, double h, double tMax) {
         validateParameters(method, a, tau, h, tMax);
         this.tau = tau;

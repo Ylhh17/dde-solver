@@ -47,6 +47,7 @@ public class Main extends Application {
     private final TextField hField = new TextField("0.05");
     private final TextField tMaxField = new TextField("10");
     private final TextField phiField = new TextField("1");
+    private final TextField exactField = new TextField();
 
     private final ComboBox<String> exampleCombo = new ComboBox<>();
     private final ComboBox<String> methodCombo = new ComboBox<>();
@@ -81,12 +82,14 @@ public class Main extends Application {
         Button solveButton = new Button("Рассчитать");
         Button compareButton = new Button("Сравнить методы");
         Button errorButton = new Button("График расхождения");
+        Button exactButton = new Button("Сравнить с точным");
         Button exportAllButton = new Button("Экспорт всех методов");
         Button helpButton = new Button("Справка");
 
         solveButton.setMaxWidth(Double.MAX_VALUE);
         compareButton.setMaxWidth(Double.MAX_VALUE);
         errorButton.setMaxWidth(Double.MAX_VALUE);
+        exactButton.setMaxWidth(Double.MAX_VALUE);
         tableButton.setMaxWidth(Double.MAX_VALUE);
         saveButton.setMaxWidth(Double.MAX_VALUE);
         exportAllButton.setMaxWidth(Double.MAX_VALUE);
@@ -95,6 +98,7 @@ public class Main extends Application {
         solveButton.setTooltip(new Tooltip("Рассчитать решение выбранным методом"));
         compareButton.setTooltip(new Tooltip("Построить решения всеми тремя методами"));
         errorButton.setTooltip(new Tooltip("Показать модуль разности решений Эйлера и RK4"));
+        exactButton.setTooltip(new Tooltip("Сравнить выбранный метод с заданным аналитическим решением"));
         tableButton.setTooltip(new Tooltip("Открыть таблицу последнего рассчитанного решения"));
         saveButton.setTooltip(new Tooltip("Сохранить последнее рассчитанное решение"));
         exportAllButton.setTooltip(new Tooltip("Рассчитать и сохранить три метода в один CSV"));
@@ -102,6 +106,7 @@ public class Main extends Application {
         solveButton.setOnAction(event -> runSafely(this::solveCurrent));
         compareButton.setOnAction(event -> runSafely(this::compareMethods));
         errorButton.setOnAction(event -> runSafely(this::showDifference));
+        exactButton.setOnAction(event -> runSafely(this::compareWithExact));
         tableButton.setOnAction(event -> runSafely(this::showTable));
         saveButton.setOnAction(event -> runSafely(this::saveCurrent));
         exportAllButton.setOnAction(event -> runSafely(this::exportAll));
@@ -118,13 +123,14 @@ public class Main extends Application {
 
         VBox equation = section("Уравнение",
                 labelled("Начальная функция φ(t), t ≤ 0", phiField),
+                labelled("Точное решение y(t), необязательно", exactField),
                 labelled("Тип уравнения", exampleCombo),
                 labelled("Численный метод", methodCombo));
         equation.setPrefWidth(390);
 
         setOptionalFieldsVisibility();
 
-        VBox actions = section("Действия", solveButton, compareButton, errorButton,
+        VBox actions = section("Действия", solveButton, compareButton, errorButton, exactButton,
                 tableButton, saveButton, exportAllButton, helpButton);
         actions.setPrefWidth(220);
 
@@ -171,7 +177,7 @@ public class Main extends Application {
         saveButton.setDisable(true);
         tableButton.setDisable(true);
 
-        List<TextField> fields = List.of(aField, bField, tauField, tau2Field, hField, tMaxField, phiField);
+        List<TextField> fields = List.of(aField, bField, tauField, tau2Field, hField, tMaxField, phiField, exactField);
         for (TextField field : fields) {
             field.setMaxWidth(Double.MAX_VALUE);
             field.textProperty().addListener(this::inputChanged);
@@ -205,9 +211,17 @@ public class Main extends Application {
         saveButton.setDisable(false);
         tableButton.setDisable(false);
 
-        lineChart.getData().setAll(series(currentMethodName, solver));
+        NumericalSolution numerical = new NumericalSolution(method, solver.getTList(), solver.getYList());
+        ExactSolution exact = optionalExactSolution(input);
+        if (exact == null) {
+            lineChart.getData().setAll(series(currentMethodName, numerical));
+            setSuccess(String.format(Locale.ROOT, "Готово: %d точек, %.3f мс", currentTimes.length, elapsedNanos / 1_000_000.0));
+        } else {
+            ErrorMetrics metrics = ErrorMetrics.compare(numerical, exact);
+            lineChart.getData().setAll(series(currentMethodName, numerical), exactSeries(exact, numerical.times()));
+            setSuccess(metricsMessage(currentTimes.length, elapsedNanos, metrics));
+        }
         lineChart.setTitle("Решение: " + currentMethodName);
-        setSuccess(String.format(Locale.ROOT, "Готово: %d точек, %.3f мс", currentTimes.length, elapsedNanos / 1_000_000.0));
     }
 
     private void compareMethods() {
@@ -217,11 +231,16 @@ public class Main extends Application {
 
         for (DDESolver.Method method : DDESolver.Method.values()) {
             DDESolver solver = solve(input, method);
-            series.add(series(methodName(method), solver));
+            series.add(series(methodName(method), new NumericalSolution(method, solver.getTList(), solver.getYList())));
         }
 
+        ExactSolution exact = optionalExactSolution(input);
+        if (exact != null) {
+            DDESolver referenceGrid = solve(input, DDESolver.Method.RUNGE_KUTTA_4);
+            series.add(exactSeries(exact, referenceGrid.getTList()));
+        }
         lineChart.getData().setAll(series);
-        lineChart.setTitle("Сравнение численных методов");
+        lineChart.setTitle(exact == null ? "Сравнение численных методов" : "Сравнение методов с точным решением");
         long elapsedNanos = System.nanoTime() - startedAt;
         setSuccess(String.format(Locale.ROOT, "Три метода рассчитаны за %.3f мс", elapsedNanos / 1_000_000.0));
     }
@@ -246,6 +265,28 @@ public class Main extends Application {
         setSuccess("График расхождения построен. Это разность двух приближений, а не точная погрешность.");
     }
 
+    private void compareWithExact() {
+        CalculationInput input = readInput();
+        ExactSolution exact = requiredExactSolution(input);
+        DDESolver.Method method = selectedMethod();
+        long startedAt = System.nanoTime();
+        DDESolver solver = solve(input, method);
+        NumericalSolution numerical = new NumericalSolution(method, solver.getTList(), solver.getYList());
+        ErrorMetrics metrics = ErrorMetrics.compare(numerical, exact);
+        long elapsedNanos = System.nanoTime() - startedAt;
+
+        currentTimes = toArray(numerical.times());
+        currentValues = toArray(numerical.values());
+        currentInput = input;
+        currentMethodName = methodName(method);
+        saveButton.setDisable(false);
+        tableButton.setDisable(false);
+
+        lineChart.getData().setAll(series(currentMethodName, numerical), exactSeries(exact, numerical.times()));
+        lineChart.setTitle("Численное и точное решения");
+        setSuccess(metricsMessage(numerical.size(), elapsedNanos, metrics));
+    }
+
     private void saveCurrent() {
         requireCurrentResult();
         File file = chooseCsvFile("Сохранить текущее решение", "dde-solution.csv");
@@ -253,10 +294,18 @@ public class Main extends Application {
             return;
         }
 
+        ExactSolution exact = optionalExactSolution(currentInput);
         try (BufferedWriter writer = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
-            writer.write("t,y\n");
+            writer.write(exact == null ? "t,y\n" : "t,y,exact,absoluteError,relativeError\n");
             for (int index = 0; index < currentTimes.length; index++) {
-                writer.write(csv(currentTimes[index]) + "," + csv(currentValues[index]) + "\n");
+                writer.write(csv(currentTimes[index]) + "," + csv(currentValues[index]));
+                if (exact != null) {
+                    double exactValue = exact.valueAt(currentTimes[index]);
+                    double absoluteError = Math.abs(currentValues[index] - exactValue);
+                    writer.write("," + csv(exactValue) + "," + csv(absoluteError) + ","
+                            + csv(relativeError(absoluteError, exactValue)));
+                }
+                writer.write("\n");
             }
         } catch (IOException exception) {
             throw new IllegalStateException("Не удалось сохранить файл: " + exception.getMessage(), exception);
@@ -278,14 +327,26 @@ public class Main extends Application {
             return;
         }
 
+        ExactSolution exact = optionalExactSolution(input);
         try (BufferedWriter writer = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
-            writer.write("t,Euler,RK4,AdamsBashforth2\n");
+            writer.write(exact == null
+                    ? "t,Euler,RK4,AdamsBashforth2\n"
+                    : "t,Euler,RK4,AdamsBashforth2,exact,EulerAbsError,RK4AbsError,AdamsAbsError\n");
             int size = solvers.get(0).getTList().size();
             for (int index = 0; index < size; index++) {
-                writer.write(csv(solvers.get(0).getTList().get(index)) + ","
-                        + csv(solvers.get(0).getYList().get(index)) + ","
-                        + csv(solvers.get(1).getYList().get(index)) + ","
-                        + csv(solvers.get(2).getYList().get(index)) + "\n");
+                double time = solvers.get(0).getTList().get(index);
+                double euler = solvers.get(0).getYList().get(index);
+                double rk4 = solvers.get(1).getYList().get(index);
+                double adams = solvers.get(2).getYList().get(index);
+                writer.write(csv(time) + "," + csv(euler) + "," + csv(rk4) + "," + csv(adams));
+                if (exact != null) {
+                    double exactValue = exact.valueAt(time);
+                    writer.write("," + csv(exactValue)
+                            + "," + csv(Math.abs(euler - exactValue))
+                            + "," + csv(Math.abs(rk4 - exactValue))
+                            + "," + csv(Math.abs(adams - exactValue)));
+                }
+                writer.write("\n");
             }
         } catch (IOException exception) {
             throw new IllegalStateException("Не удалось сохранить файл: " + exception.getMessage(), exception);
@@ -359,24 +420,32 @@ public class Main extends Application {
     }
 
     private CalculationInput readInput() {
-        boolean usesB = !CLASSIC.equals(exampleCombo.getValue());
-        boolean usesSecondDelay = TWO_DELAYS.equals(exampleCombo.getValue());
+        return parseInput(exampleCombo.getValue(), aField.getText(), bField.getText(), tauField.getText(),
+                tau2Field.getText(), hField.getText(), tMaxField.getText(), phiField.getText(), exactField.getText());
+    }
 
-        double a = InputValidator.parseFinite(aField.getText(), "a");
-        double b = usesB ? InputValidator.parseFinite(bField.getText(), "b") : 0.0;
-        double tau = InputValidator.parsePositive(tauField.getText(), "τ");
-        double tau2 = usesSecondDelay ? InputValidator.parsePositive(tau2Field.getText(), "τ₂") : 0.0;
-        double h = InputValidator.parsePositive(hField.getText(), "h");
-        double tMax = InputValidator.parseNonNegative(tMaxField.getText(), "t max");
-        String phi = InputValidator.requireText(phiField.getText(), "Начальная функция");
+    static CalculationInput parseInput(String example, String aText, String bText, String tauText,
+                                       String tau2Text, String hText, String tMaxText,
+                                       String phiText, String exactText) {
+        boolean usesB = !CLASSIC.equals(example);
+        boolean usesSecondDelay = TWO_DELAYS.equals(example);
+
+        double a = InputValidator.parseFinite(aText, "a");
+        double b = usesB ? InputValidator.parseFinite(bText, "b") : 0.0;
+        double tau = InputValidator.parsePositive(tauText, "τ");
+        double tau2 = usesSecondDelay ? InputValidator.parsePositive(tau2Text, "τ₂") : 0.0;
+        double h = InputValidator.parsePositive(hText, "h");
+        double tMax = InputValidator.parseNonNegative(tMaxText, "t max");
+        String phi = InputValidator.requireText(phiText, "Начальная функция");
+        String exact = exactText == null ? "" : exactText.trim();
         InputValidator.validateStep(h, tau, tau2);
 
-        String expression = switch (exampleCombo.getValue()) {
+        String expression = switch (example) {
             case STATE -> "a * y_tau1 + (" + Double.toString(b) + ") * y";
             case TWO_DELAYS -> "a * y_tau1 + (" + Double.toString(b) + ") * y_tau2";
             default -> "a * y_tau1";
         };
-        return new CalculationInput(a, b, tau, tau2, h, tMax, phi, expression, usesSecondDelay);
+        return new CalculationInput(a, b, tau, tau2, h, tMax, phi, exact, expression, usesSecondDelay);
     }
 
     private DDESolver solve(CalculationInput input, DDESolver.Method method) {
@@ -409,13 +478,45 @@ public class Main extends Application {
         };
     }
 
-    private XYChart.Series<Number, Number> series(String name, DDESolver solver) {
-        XYChart.Series<Number, Number> series = new XYChart.Series<>();
-        series.setName(name);
-        for (int index = 0; index < solver.getTList().size(); index++) {
-            series.getData().add(new XYChart.Data<>(solver.getTList().get(index), solver.getYList().get(index)));
+    private XYChart.Series<Number, Number> series(String name, NumericalSolution solution) {
+        XYChart.Series<Number, Number> chartSeries = new XYChart.Series<>();
+        chartSeries.setName(name);
+        for (int index = 0; index < solution.size(); index++) {
+            chartSeries.getData().add(new XYChart.Data<>(solution.times().get(index), solution.values().get(index)));
         }
-        return series;
+        return chartSeries;
+    }
+
+    private XYChart.Series<Number, Number> exactSeries(ExactSolution exact, List<Double> times) {
+        XYChart.Series<Number, Number> chartSeries = new XYChart.Series<>();
+        chartSeries.setName("Точное решение");
+        for (double time : times) {
+            chartSeries.getData().add(new XYChart.Data<>(time, exact.valueAt(time)));
+        }
+        return chartSeries;
+    }
+
+    private ExactSolution optionalExactSolution(CalculationInput input) {
+        return input.exact().isBlank() ? null
+                : new ExactSolution(input.exact(), input.a(), input.b(), input.tau(), input.tau2());
+    }
+
+    private ExactSolution requiredExactSolution(CalculationInput input) {
+        ExactSolution exact = optionalExactSolution(input);
+        if (exact == null) {
+            throw new IllegalArgumentException("Введите выражение точного решения, например exp(t)");
+        }
+        return exact;
+    }
+
+    private static String metricsMessage(int pointCount, long elapsedNanos, ErrorMetrics metrics) {
+        String relative = Double.isNaN(metrics.maximumRelativeError())
+                ? "не определена"
+                : String.format(Locale.ROOT, "%.4e", metrics.maximumRelativeError());
+        return String.format(Locale.ROOT,
+                "Готово: %d точек, %.3f мс; max |ошибка| = %.4e; RMS = %.4e; max отн. = %s; в конце = %.4e",
+                pointCount, elapsedNanos / 1_000_000.0, metrics.maximumAbsoluteError(),
+                metrics.rootMeanSquareError(), relative, metrics.finalAbsoluteError());
     }
 
     private void ensureSameGrid(DDESolver first, DDESolver second) {
@@ -563,11 +664,15 @@ public class Main extends Application {
         return values.stream().mapToDouble(Double::doubleValue).toArray();
     }
 
+    private static double relativeError(double absoluteError, double exactValue) {
+        return Math.abs(exactValue) <= 1e-12 ? Double.NaN : absoluteError / Math.abs(exactValue);
+    }
+
     private static String csv(double value) {
         return Double.toString(value);
     }
 
-    private record CalculationInput(
+    record CalculationInput(
             double a,
             double b,
             double tau,
@@ -575,6 +680,7 @@ public class Main extends Application {
             double h,
             double tMax,
             String phi,
+            String exact,
             String expression,
             boolean usesSecondDelay
     ) {
