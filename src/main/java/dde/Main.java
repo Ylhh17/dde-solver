@@ -1,734 +1,586 @@
 package dde;
 
 import javafx.application.Application;
+import javafx.beans.value.ObservableValue;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
-import javafx.geometry.Pos;
+import net.objecthunter.exp4j.Expression;
+import net.objecthunter.exp4j.ExpressionBuilder;
 
+import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
-import java.util.HashMap;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
+import java.util.Locale;
 
-// Главный класс
 public class Main extends Application {
 
-    private final ComboBox<String> methodCombo = new ComboBox<>(); // Комбобокс для выбора метода
-    private final Map<String, XYChart.Series<Number, Number>> methodSeries = new HashMap<>(); // Словарь для хранения графиков разных методов (если понадобится)
-    private double[] ts; // Массивы для хранения рассчитанных данных (используются для экспорта и таблицы)
-    private double[] ys;
+    private static final String CLASSIC = "Классика: ẏ(t) = a·y(t-τ)";
+    private static final String STATE = "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)";
+    private static final String TWO_DELAYS = "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)";
+
+    private final TextField aField = new TextField("-1");
+    private final TextField bField = new TextField("0.5");
+    private final TextField tauField = new TextField("1");
+    private final TextField tau2Field = new TextField("0.5");
+    private final TextField hField = new TextField("0.05");
+    private final TextField tMaxField = new TextField("10");
+    private final TextField phiField = new TextField("1");
+
+    private final ComboBox<String> exampleCombo = new ComboBox<>();
+    private final ComboBox<String> methodCombo = new ComboBox<>();
+    private final Label equationLabel = new Label();
+    private final Label descriptionLabel = new Label();
+    private final Label statusLabel = new Label("Введите параметры и нажмите «Рассчитать»");
+    private final Button saveButton = new Button("Сохранить в CSV");
+    private final Button tableButton = new Button("Показать таблицу");
+
+    private LineChart<Number, Number> lineChart;
+    private Stage owner;
+    private double[] currentTimes;
+    private double[] currentValues;
+    private CalculationInput currentInput;
+    private String currentMethodName;
 
     @Override
     public void start(Stage stage) {
+        owner = stage;
+        configureControls();
 
-        System.out.println("JavaFX стартует!");
-
-        // === Элементы ввода параметров DDE ===
-        Label aLabel = new Label("a:");
-        TextField aField = new TextField("");
-        Label bLabel = new Label("b:");
-        TextField bField = new TextField("");
-        Label tauLabel = new Label("τ (tau):");
-        TextField tauField = new TextField("");
-        Label tau2Label = new Label("τ₂ (доп. задержка):");
-        TextField tau2Field = new TextField("");
-        Label hLabel = new Label("h (шаг):");
-        TextField hField = new TextField("");
-        Label tMaxLabel = new Label("t max:");
-        TextField tMaxField = new TextField("");
-        Label phiLabel = new Label("φ(t ≤ 0):");
-        TextField phiField = new TextField(""); // начальные условия
-
-        // === Поле для отображения текущего уравнения ===
-        Label equationLabel = new Label();
-        equationLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold; -fx-padding: 10 0 10 0;");
-
-        // === Поле для пояснения режима (меняется при выборе примера) ===
-        Label descriptionLabel = new Label();
-        descriptionLabel.setWrapText(true);
-        descriptionLabel.setStyle("-fx-font-size: 14px; -fx-padding: 5 0 5 0;");
-
-        // === Примеры уравнений (режимы) ===
-        ComboBox<String> exampleCombo = new ComboBox<>();
-        exampleCombo.getItems().addAll(
-                "Классика: ẏ(t) = a·y(t-τ)",
-                "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)",
-                "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)"
-        );
-        exampleCombo.setValue("Классика: ẏ(t) = a·y(t-τ)"); // по умолчанию
-
-        // === Размещение параметров в GridPane ===
-        GridPane inputGrid = new GridPane();
-        inputGrid.setVgap(10);
-        inputGrid.setHgap(10);
-        inputGrid.setPadding(new Insets(10));
-        inputGrid.add(aLabel, 0, 0);
-        inputGrid.add(aField, 1, 0);
-        inputGrid.add(bLabel, 0, 1);
-        inputGrid.add(bField, 1, 1);
-        inputGrid.add(tauLabel, 0, 2);
-        inputGrid.add(tauField, 1, 2);
-        inputGrid.add(tau2Label, 0, 3);
-        inputGrid.add(tau2Field, 1, 3);
-        inputGrid.add(hLabel, 0, 4);
-        inputGrid.add(hField, 1, 4);
-        inputGrid.add(tMaxLabel, 0, 5);
-        inputGrid.add(tMaxField, 1, 5);
-        inputGrid.add(phiLabel, 0, 6);
-        inputGrid.add(phiField, 1, 6);
-        inputGrid.add(new Label("Пример:"), 2, 6);
-        inputGrid.add(exampleCombo, 3, 6);
-
-        // === Скрытие b/tau2 для классики ===
-        bLabel.setVisible(false);
-        bLabel.setManaged(false);
-        bField.setVisible(false);
-        bField.setManaged(false);
-        tau2Label.setVisible(false);
-        tau2Label.setManaged(false);
-        tau2Field.setVisible(false);
-        tau2Field.setManaged(false);
-
-        // === Лямбды для обновления уравнения и пояснения ===
-        Runnable updateEquation = () -> equationLabel.setText(
-                "Уравнение: " + getEquationText(
-                        exampleCombo.getValue(),
-                        aField.getText(),
-                        bField.getText(),
-                        tauField.getText(),
-                        tau2Field.getText()
-                )
-        );
-
-        Runnable updateDescription = () -> {
-            switch (exampleCombo.getValue()) {
-                case "Классика: ẏ(t) = a·y(t-τ)" ->
-                        descriptionLabel.setText("Классическая DDE: производная в текущий момент зависит только от значения функции в прошлом (на время задержки).");
-                case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)" ->
-                        descriptionLabel.setText("Производная зависит как от значения функции в прошлом, так и от её текущего значения. Это позволяет моделировать процессы с внутренней обратной связью.");
-                case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)" ->
-                        descriptionLabel.setText("В уравнении две задержки — производная зависит от функции в двух разных прошлых моментах времени. Это отражает влияние нескольких предыдущих состояний на эволюцию системы.");
-                default -> descriptionLabel.setText("");
-            }
-        };
-
-        // === Логика переключения режимов уравнения ===
-        exampleCombo.setOnAction(e -> {
-            switch (exampleCombo.getValue()) {
-                case "Классика: ẏ(t) = a·y(t-τ)" -> {
-                    aLabel.setVisible(true);
-                    aLabel.setManaged(true);
-                    aField.setVisible(true);
-                    aField.setManaged(true);
-
-                    bLabel.setVisible(false);
-                    bLabel.setManaged(false);
-                    bField.setVisible(false);
-                    bField.setManaged(false);
-
-                    tauLabel.setVisible(true);
-                    tauLabel.setManaged(true);
-                    tauField.setVisible(true);
-                    tauField.setManaged(true);
-
-                    tau2Label.setVisible(false);
-                    tau2Label.setManaged(false);
-                    tau2Field.setVisible(false);
-                    tau2Field.setManaged(false);
-                }
-                case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)" -> {
-                    aLabel.setVisible(true);
-                    aLabel.setManaged(true);
-                    aField.setVisible(true);
-                    aField.setManaged(true);
-
-                    bLabel.setVisible(true);
-                    bLabel.setManaged(true);
-                    bField.setVisible(true);
-                    bField.setManaged(true);
-
-                    tauLabel.setVisible(true);
-                    tauLabel.setManaged(true);
-                    tauField.setVisible(true);
-                    tauField.setManaged(true);
-
-                    tau2Label.setVisible(false);
-                    tau2Label.setManaged(false);
-                    tau2Field.setVisible(false);
-                    tau2Field.setManaged(false);
-                }
-                case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)" -> {
-                    aLabel.setVisible(true);
-                    aLabel.setManaged(true);
-                    aField.setVisible(true);
-                    aField.setManaged(true);
-
-                    bLabel.setVisible(true);
-                    bLabel.setManaged(true);
-                    bField.setVisible(true);
-                    bField.setManaged(true);
-
-                    tauLabel.setVisible(true);
-                    tauLabel.setManaged(true);
-                    tauField.setVisible(true);
-                    tauField.setManaged(true);
-
-                    tau2Label.setVisible(true);
-                    tau2Label.setManaged(true);
-                    tau2Field.setVisible(true);
-                    tau2Field.setManaged(true);
-                }
-            }
-            updateEquation.run();
-            updateDescription.run();
-        });
-        updateEquation.run();
-
-        // Автообновление уравнения при изменении параметров
-        aField.textProperty().addListener((obs, oldV, newV) -> updateEquation.run());
-        bField.textProperty().addListener((obs, oldV, newV) -> updateEquation.run());
-        tauField.textProperty().addListener((obs, oldV, newV) -> updateEquation.run());
-        tau2Field.textProperty().addListener((obs, oldV, newV) -> updateEquation.run());
-
-
-        // === Выбор численного метода ===
-        methodCombo.getItems().addAll("Метод Эйлера", "Метод Рунге-Кутты 4", "Метод Адамса-Бэшфорта");
-        methodCombo.setValue("Метод Эйлера");
-        inputGrid.add(new Label("Метод:"), 0, 7);
-        inputGrid.add(methodCombo, 1, 7);
-        // === Кнопки управления ===
-        Button solveButton = new Button("Рассчитать");
-        Button saveButton = new Button("Сохранить в CSV");
-
-        // === График ===
         NumberAxis xAxis = new NumberAxis();
         NumberAxis yAxis = new NumberAxis();
         xAxis.setLabel("t");
         yAxis.setLabel("y(t)");
-        LineChart<Number, Number> lineChart = new LineChart<>(xAxis, yAxis);
-        lineChart.setTitle("Решение DDE");
+        lineChart = new LineChart<>(xAxis, yAxis);
+        lineChart.setTitle("Решение дифференциального уравнения с запаздыванием");
+        lineChart.setCreateSymbols(false);
+        lineChart.setAnimated(false);
+        lineChart.setMinHeight(480);
 
-        // === Кнопка "Рассчитать" === // Обработчик
-        solveButton.setOnAction(e -> {
-            double a = Double.parseDouble(aField.getText()); // Чтение параметров
-            double b = bField.isVisible() ? Double.parseDouble(bField.getText()) : 0;
-            double tau = Double.parseDouble(tauField.getText());
-            double tau2 = tau2Field.isVisible() ? Double.parseDouble(tau2Field.getText()) : 0;
-            double h = Double.parseDouble(hField.getText());
-            double tMax = Double.parseDouble(tMaxField.getText());
-            // Выбор выражения для solver
-            String expr = switch (exampleCombo.getValue()) {
-                case "Классика: ẏ(t) = a·y(t-τ)" -> "a * y_tau1";
-                case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)" -> "a * y_tau1 + b * y";
-                case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)" -> "a * y_tau1 + b * y_tau2";
-                default -> "a * y_tau1";
-            };
-
-            // Подставляем b в формулу, если он используется
-            String exprReady = expr.replace("b", Double.toString(b));
-            // Инициализация solver
-            DDESolver solver = new DDESolver();
-            solver.setTau2(tau2);
-            solver.setInitialFunctionExpression(phiField.getText());
-            solver.setExpression(exprReady);
-
-            DDESolver.Method method = switch (methodCombo.getValue()) {
-                case "Метод Рунге-Кутты 4" -> DDESolver.Method.RUNGE_KUTTA_4;
-                case "Метод Адамса-Бэшфорта" -> DDESolver.Method.ADAMS_BASHFORTH_2;
-                default -> DDESolver.Method.EULER;
-            };
-
-            // Решение
-            solver.solve(method, a, tau, h, tMax);
-
-            List<Double> tList = solver.getTList();
-            List<Double> yList = solver.getYList();
-
-            // Сохраняем значения для экспорта/таблицы
-            ts = tList.stream().mapToDouble(Double::doubleValue).toArray();
-            ys = yList.stream().mapToDouble(Double::doubleValue).toArray();
-
-            // Обновляем график
-            XYChart.Series<Number, Number> series = new XYChart.Series<>();
-            series.setName(methodCombo.getValue());
-            for (int i = 0; i < tList.size(); i++) {
-                series.getData().add(new XYChart.Data<>(tList.get(i), yList.get(i)));
-            }
-
-            lineChart.getData().clear();
-            lineChart.getData().add(series);
-
-            System.out.println("Выбран метод: " + method);
-        });
-
-        // === Кнопка справки ===
-        Button helpButton = new Button("ℹ️ Справка о методах");
-        helpButton.setTooltip(new Tooltip("Объяснение численных методов"));
-
-        helpButton.setOnAction(e -> {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Справка о численных методах и режимах");
-            alert.setHeaderText("Описание режимов и методов:");
-            alert.setContentText("""
-                    Режимы уравнения:
-                    
-                    Классика:
-                    Классическая DDE: производная в текущий момент зависит только от значения функции в прошлом (на время задержки).
-                    
-                    Состояние:
-                    Производная зависит как от значения функции в прошлом, так и от её текущего значения. Это позволяет моделировать процессы с внутренней обратной связью.
-                    
-                    Две задержки:
-                    В уравнении две задержки — производная зависит от функции в двух разных прошлых моментах времени. Это отражает влияние нескольких предыдущих состояний на эволюцию системы.
-                    
-                    ----------------------------------------------------
-                    Численные методы:
-                    
-                    Метод Эйлера: простой и быстрый, но может быть неточным.
-                    Метод Рунге–Кутты 4 порядка: самый точный среди реализованных.
-                    Метод Адамса–Бэшфорта 2 порядка: использует предсказание на основе предыдущих шагов.
-                    
-                    Вы можете сравнить их точность, используя кнопку 'Сравнить методы' или 'График ошибки'.
-                    """);
-            alert.showAndWait();
-        });
-
-        // === Кнопка "Сравнить методы" ===
+        Button solveButton = new Button("Рассчитать");
         Button compareButton = new Button("Сравнить методы");
-
-        compareButton.setOnAction(e -> { // Аналогично solveButton, только строит все методы сразу
-            double a = Double.parseDouble(aField.getText());
-            double b = bField.isVisible() ? Double.parseDouble(bField.getText()) : 0;
-            double tau = Double.parseDouble(tauField.getText());
-            double tau2 = tau2Field.isVisible() ? Double.parseDouble(tau2Field.getText()) : 0;
-            double h = Double.parseDouble(hField.getText());
-            double tMax = Double.parseDouble(tMaxField.getText());
-            String phiExpr = phiField.getText();
-
-            String expr = switch (exampleCombo.getValue()) {
-                case "Классика: ẏ(t) = a·y(t-τ)" -> "a * y_tau1";
-                case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)" -> "a * y_tau1 + b * y";
-                case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)" -> "a * y_tau1 + b * y_tau2";
-                default -> "a * y_tau1";
-            };
-            String exprReady = expr.replace("b", Double.toString(b));
-
-            lineChart.getData().clear();
-
-            for (DDESolver.Method method : DDESolver.Method.values()) {
-                DDESolver solver = new DDESolver();
-                solver.setTau2(tau2);
-                solver.setInitialFunctionExpression(phiExpr);
-                solver.setExpression(exprReady);
-                solver.solve(method, a, tau, h, tMax);
-
-                XYChart.Series<Number, Number> series = new XYChart.Series<>();
-                series.setName(switch (method) {
-                    case EULER -> "Эйлер";
-                    case RUNGE_KUTTA_4 -> "Рунге-Кутта 4";
-                    case ADAMS_BASHFORTH_2 -> "Адамс-Бэшфорта";
-                });
-
-                List<Double> tList = solver.getTList();
-                List<Double> yList = solver.getYList();
-
-                for (int i = 0; i < tList.size(); i++) {
-                    series.getData().add(new XYChart.Data<>(tList.get(i), yList.get(i)));
-                }
-
-                lineChart.getData().add(series);
-            }
-
-            lineChart.setTitle("Сравнение методов: a=" + a + ", τ=" + tau + ", h=" + h);
-        });
-
-        // === Кнопка "Экспорт всех методов" ===
+        Button errorButton = new Button("График расхождения");
         Button exportAllButton = new Button("Экспорт всех методов");
+        Button helpButton = new Button("Справка");
 
-        exportAllButton.setOnAction(e -> {
-            double a = Double.parseDouble(aField.getText());
-            double b = bField.isVisible() ? Double.parseDouble(bField.getText()) : 0;
-            double tau = Double.parseDouble(tauField.getText());
-            double tau2 = tau2Field.isVisible() ? Double.parseDouble(tau2Field.getText()) : 0;
-            double h = Double.parseDouble(hField.getText());
-            double tMax = Double.parseDouble(tMaxField.getText());
+        solveButton.setMaxWidth(Double.MAX_VALUE);
+        compareButton.setMaxWidth(Double.MAX_VALUE);
+        errorButton.setMaxWidth(Double.MAX_VALUE);
+        tableButton.setMaxWidth(Double.MAX_VALUE);
+        saveButton.setMaxWidth(Double.MAX_VALUE);
+        exportAllButton.setMaxWidth(Double.MAX_VALUE);
+        helpButton.setMaxWidth(Double.MAX_VALUE);
 
-            String expr = switch (exampleCombo.getValue()) {
-                case "Классика: ẏ(t) = a·y(t-τ)" -> "a * y_tau1";
-                case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)" -> "a * y_tau1 + b * y";
-                case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)" -> "a * y_tau1 + b * y_tau2";
-                default -> "a * y_tau1";
-            };
-            String exprReady = expr.replace("b", Double.toString(b));
+        solveButton.setTooltip(new Tooltip("Рассчитать решение выбранным методом"));
+        compareButton.setTooltip(new Tooltip("Построить решения всеми тремя методами"));
+        errorButton.setTooltip(new Tooltip("Показать модуль разности решений Эйлера и RK4"));
+        tableButton.setTooltip(new Tooltip("Открыть таблицу последнего рассчитанного решения"));
+        saveButton.setTooltip(new Tooltip("Сохранить последнее рассчитанное решение"));
+        exportAllButton.setTooltip(new Tooltip("Рассчитать и сохранить три метода в один CSV"));
 
-            int steps = (int) (tMax / h);
-            double[] tsLocal = new double[steps + 1];
-            double[][] ysLocal = new double[3][steps + 1];
+        solveButton.setOnAction(event -> runSafely(this::solveCurrent));
+        compareButton.setOnAction(event -> runSafely(this::compareMethods));
+        errorButton.setOnAction(event -> runSafely(this::showDifference));
+        tableButton.setOnAction(event -> runSafely(this::showTable));
+        saveButton.setOnAction(event -> runSafely(this::saveCurrent));
+        exportAllButton.setOnAction(event -> runSafely(this::exportAll));
+        helpButton.setOnAction(event -> showHelp());
 
-            int methodIndex = 0;
-            for (DDESolver.Method method : DDESolver.Method.values()) {
-                DDESolver solver = new DDESolver();
-                solver.setTau2(tau2);
-                solver.setInitialFunctionExpression(phiField.getText());
-                solver.setExpression(exprReady);
-                solver.solve(method, a, tau, h, tMax);
+        VBox parameters = section("Параметры",
+                labelled("a", aField),
+                labelled("b", bField),
+                labelled("τ", tauField),
+                labelled("τ₂", tau2Field),
+                labelled("Шаг h", hField),
+                labelled("Конец интервала", tMaxField));
+        parameters.setPrefWidth(210);
 
-                List<Double> tList = solver.getTList();
-                List<Double> yList = solver.getYList();
+        VBox equation = section("Уравнение",
+                labelled("Начальная функция φ(t), t ≤ 0", phiField),
+                labelled("Тип уравнения", exampleCombo),
+                labelled("Численный метод", methodCombo));
+        equation.setPrefWidth(390);
 
-                for (int i = 0; i < tList.size(); i++) {
-                    tsLocal[i] = tList.get(i);
-                    ysLocal[methodIndex][i] = yList.get(i);
-                }
-                methodIndex++;
-            }
+        setOptionalFieldsVisibility();
 
-            // Сохраняем
-            FileChooser fileChooser = new FileChooser();
-            fileChooser.setTitle("Сохранить все решения");
-            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV файлы", "*.csv"));
-            File file = fileChooser.showSaveDialog(new Stage());
+        VBox actions = section("Действия", solveButton, compareButton, errorButton,
+                tableButton, saveButton, exportAllButton, helpButton);
+        actions.setPrefWidth(220);
 
-            if (file != null) {
-                try (FileWriter writer = new FileWriter(file)) {
-                    writer.write("t,Euler,RK4,Adams\n");
-                    for (int i = 0; i < tsLocal.length; i++) {
-                        writer.write(tsLocal[i] + "," + ysLocal[0][i] + "," + ysLocal[1][i] + "," + ysLocal[2][i] + "\n");
-                    }
-                    System.out.println("Файл успешно экспортирован!");
-                } catch (IOException ex) {
-                    ex.printStackTrace();
-                }
-            }
-        });
+        equationLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        equationLabel.setWrapText(true);
+        descriptionLabel.setWrapText(true);
+        descriptionLabel.setStyle("-fx-text-fill: #555555;");
+        VBox information = section("Текущая задача", equationLabel, descriptionLabel);
+        HBox.setHgrow(information, Priority.ALWAYS);
 
-        // Обработка кнопки "Сохранить" // === Кнопка "Сохранить текущее решение" ===
-        saveButton.setOnAction(e -> {
-            if (ts != null && ys != null) {
-                FileChooser fileChooser = new FileChooser();
-                fileChooser.setTitle("Сохранить как CSV");
-                fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV files", "*.csv"));
-                File file = fileChooser.showSaveDialog(stage);
+        HBox top = new HBox(18, parameters, equation, actions, information);
+        top.setAlignment(Pos.TOP_LEFT);
+        top.setPadding(new Insets(12));
 
-                if (file != null) {
-                    try (FileWriter writer = new FileWriter(file)) {
-                        writer.write("t,y\n");
-                        for (int i = 0; i < ts.length; i++) {
-                            writer.write(ts[i] + "," + ys[i] + "\n");
-                        }
+        statusLabel.setMaxWidth(Double.MAX_VALUE);
+        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #eef3f8; -fx-font-size: 13px;");
 
-                        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-                        alert.setTitle("Готово");
-                        alert.setHeaderText(null);
-                        alert.setContentText("Файл успешно сохранён!");
-                        alert.showAndWait();
-                    } catch (IOException ex) {
-                        ex.printStackTrace();
-                        Alert alert = new Alert(Alert.AlertType.ERROR);
-                        alert.setTitle("Ошибка");
-                        alert.setHeaderText(null);
-                        alert.setContentText("Не удалось сохранить файл.");
-                        alert.showAndWait();
-                    }
-                }
+        VBox content = new VBox(12, top, statusLabel, lineChart);
+        content.setPadding(new Insets(10));
+        VBox.setVgrow(lineChart, Priority.ALWAYS);
 
-            }
-        });
-        // === Кнопка "Показать таблицу" ===
-        Button tableButton = new Button("Показать таблицу");
+        ScrollPane scrollPane = new ScrollPane(content);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setFitToHeight(true);
 
-        tableButton.setOnAction(e -> {
-            if (ts == null || ys == null || ts.length == 0 || ys.length == 0) {
-                showAlert("Нет данных", "Сначала рассчитайте решение.");
-                return;
-            }
-            if (tauField.getText().isEmpty() || hField.getText().isEmpty()) {
-                showAlert("Ошибка", "Пожалуйста, введите значения τ и h.");
-                return;
-            }
-
-            double tau = Double.parseDouble(tauField.getText());
-            double tau2 = tau2Field.getText().isEmpty() ? 0 : Double.parseDouble(tau2Field.getText());
-
-            TableView<TableRowData> table = new TableView<>();
-
-            TableColumn<TableRowData, Double> colT = new TableColumn<>("t");
-            colT.setCellValueFactory(data -> data.getValue().tProperty().asObject());
-
-            TableColumn<TableRowData, Double> colY = new TableColumn<>("y(t)");
-            colY.setCellValueFactory(data -> data.getValue().yProperty().asObject());
-
-            TableColumn<TableRowData, Double> colTau1 = new TableColumn<>("y(t - τ₁)");
-            colTau1.setCellValueFactory(data -> data.getValue().yTau1Property().asObject());
-
-            TableColumn<TableRowData, Double> colTau2 = new TableColumn<>("y(t - τ₂)");
-            colTau2.setCellValueFactory(data -> data.getValue().yTau2Property().asObject());
-
-            table.getColumns().addAll(colT, colY, colTau1);
-            if (tau2 > 0) table.getColumns().add(colTau2);
-
-            for (int i = 0; i < ts.length; i++) {
-                double t = ts[i];
-                double y = ys[i];
-                double yTau1 = getInterpolatedY(t - tau, ts, ys);
-                double yTau2 = getInterpolatedY(t - tau2, ts, ys);
-                table.getItems().add(new TableRowData(t, y, yTau1, yTau2));
-            }
-
-            Stage tableStage = new Stage();
-            tableStage.setTitle("Таблица значений");
-            tableStage.setScene(new Scene(table, 600, 400));
-            tableStage.show();
-        });
-
-        //кнопка проверки ошибки двух методов  // === Кнопка "График ошибки" ===
-        Button errorButton = new Button("График ошибки");
-
-        errorButton.setOnAction(e -> {
-            double a = Double.parseDouble(aField.getText());
-            double b = bField.isVisible() ? Double.parseDouble(bField.getText()) : 0;
-            double tau = Double.parseDouble(tauField.getText());
-            double tau2 = tau2Field.isVisible() ? Double.parseDouble(tau2Field.getText()) : 0;
-            double h = Double.parseDouble(hField.getText());
-            double tMax = Double.parseDouble(tMaxField.getText());
-            String phiExpr = phiField.getText();
-
-            String expr = switch (exampleCombo.getValue()) {
-                case "Классика: ẏ(t) = a·y(t-τ)" -> "a * y_tau1";
-                case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)" -> "a * y_tau1 + b * y";
-                case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)" -> "a * y_tau1 + b * y_tau2";
-                default -> "a * y_tau1";
-            };
-            String exprReady = expr.replace("b", Double.toString(b));
-
-            DDESolver solver1 = new DDESolver();
-            solver1.setTau2(tau2);
-            solver1.setInitialFunctionExpression(phiExpr);
-            solver1.setExpression(exprReady);
-            solver1.solve(DDESolver.Method.EULER, a, tau, h, tMax);
-
-            DDESolver solver2 = new DDESolver();
-            solver2.setTau2(tau2);
-            solver2.setInitialFunctionExpression(phiExpr);
-            solver2.setExpression(exprReady);
-            solver2.solve(DDESolver.Method.RUNGE_KUTTA_4, a, tau, h, tMax);
-
-            List<Double> tList1 = solver1.getTList();
-            List<Double> yList1 = solver1.getYList();
-            List<Double> yList2 = solver2.getYList();
-
-            XYChart.Series<Number, Number> errorSeries = new XYChart.Series<>();
-            errorSeries.setName("Ошибка |Эйлер - РК4|");
-
-            for (int i = 0; i < tList1.size(); i++) {
-                double error = Math.abs(yList1.get(i) - yList2.get(i));
-                errorSeries.getData().add(new XYChart.Data<>(tList1.get(i), error));
-            }
-
-            lineChart.getData().clear();
-            lineChart.getData().add(errorSeries);
-            lineChart.setTitle("График ошибки между методами: Эйлер и РК4");
-        });
-        // === Кнопка "Система DDE" (сейчас закомментирована) ===
-        Button systemButton = new Button("Система DDE");
-
-        systemButton.setOnAction(e -> {
-            double a = Double.parseDouble(aField.getText());
-            double tau = Double.parseDouble(tauField.getText());
-            double h = Double.parseDouble(hField.getText());
-            double tMax = Double.parseDouble(tMaxField.getText());
-
-            int steps = (int) (tMax / h);
-            double[] ts = new double[steps + 1];
-            double[] xs = new double[steps + 1];
-            double[] ys = new double[steps + 1];
-
-            for (int i = 0; i <= steps; i++) {
-                ts[i] = i * h;
-            }
-
-            // φ(t) = 1 по умолчанию для x и y при t <= 0
-            for (int i = 0; i <= steps; i++) {
-                if (ts[i] <= 0) {
-                    xs[i] = 1.0;
-                    ys[i] = 1.0;
-                } else {
-                    double t = ts[i];
-                    double t_tau = t - tau;
-                    double xTau = getSystemYAt(t_tau, ts, xs);
-                    double yTau = getSystemYAt(t_tau, ts, ys);
-                    xs[i] = xs[i - 1] + h * (a * yTau);
-                    ys[i] = ys[i - 1] + h * (xTau);
-                }
-            }
-
-            XYChart.Series<Number, Number> xSeries = new XYChart.Series<>();
-            xSeries.setName("x(t)");
-            XYChart.Series<Number, Number> ySeries = new XYChart.Series<>();
-            ySeries.setName("y(t)");
-
-            for (int i = 0; i <= steps; i++) {
-                xSeries.getData().add(new XYChart.Data<>(ts[i], xs[i]));
-                ySeries.getData().add(new XYChart.Data<>(ts[i], ys[i]));
-            }
-
-            lineChart.getData().clear();
-            lineChart.getData().addAll(xSeries, ySeries);
-            lineChart.setTitle("Система DDE: x'(t) = a y(t-τ), y'(t) = x(t-τ)");
-        });
-        // === Формирование колонок для HBox ===
-        // ==== Первый столбик: Параметры ====
-        VBox column1 = new VBox(10,
-                aLabel, aField,
-                bLabel, bField,
-                tauLabel, tauField,
-                tau2Label, tau2Field,
-                hLabel, hField,
-                tMaxLabel, tMaxField
-        );
-        column1.setPadding(new Insets(10));
-        column1.setPrefWidth(180);
-
-        // ==== Второй столбик: Выражения ====
-        VBox column2 = new VBox(10,
-                phiLabel, phiField,
-                new Label("Пример:"), exampleCombo,
-                new Label("Метод:"), methodCombo
-        );
-        column2.setPadding(new Insets(10));
-        column2.setPrefWidth(260);
-
-        // ==== Третий столбик: Кнопки ====
-        VBox column3 = new VBox(10,
-                new Label("Действия:"),
-                solveButton,
-                compareButton,
-                errorButton,
-                //systemButton,
-                tableButton,
-                saveButton,
-                exportAllButton,
-                helpButton
-        );
-        column3.setPadding(new Insets(10));
-        column3.setPrefWidth(200);
-
-        // Можно добавить descriptionLabel под equationLabel, если захочешь!
-        VBox column4 = new VBox(equationLabel);
-        column4.setPadding(new Insets(10));
-        column4.setPrefWidth(500);
-        column4.setAlignment(Pos.CENTER);
-        equationLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold;");
-
-
-        // ==== Горизонтальный ряд из 3 колонок ==== // === Основной ряд (четыре колонки) ===
-        HBox topRow = new HBox(30, column1, column2, column3, column4); // добавь column3 если нужно
-
-        // ==== Главный контейнер: три столбца сверху + график ====
-        VBox root = new VBox(20, topRow, lineChart);
-        root.setPadding(new Insets(10));
-        lineChart.setPrefHeight(500); // жирный график
-        stage.setScene(new Scene(root, 1200, 800));
+        stage.setScene(new Scene(scrollPane, 1280, 820));
+        stage.setMinWidth(980);
+        stage.setMinHeight(700);
         stage.setTitle("DDE Solver");
-        stage.show(); // <-- ОЧЕНЬ ВАЖНО
-
-        // Tooltips для кнопок и combo //всплюывают
-        solveButton.setTooltip(new Tooltip("Рассчитать решение с выбранным методом"));
-        compareButton.setTooltip(new Tooltip("Построить графики всех трёх методов"));
-        errorButton.setTooltip(new Tooltip("Показать разницу между методами"));
-        systemButton.setTooltip(new Tooltip("Решение системы с задержкой"));
-        tableButton.setTooltip(new Tooltip("Открыть таблицу значений"));
-        saveButton.setTooltip(new Tooltip("Сохранить текущее решение в файл CSV"));
-        exportAllButton.setTooltip(new Tooltip("Сохранить все три метода в один CSV-файл"));
-        exampleCombo.setTooltip(new Tooltip("Выберите тип уравнения. Для описания режимов нажмите ℹ️ Справка."));
+        stage.show();
     }
-    // ==== Вспомогательные методы ====
 
-    // Для ошибок
-    private void showErrorDialog(String ошибкаВычислений, String message) {}
-    // Для обновления графика (не используется напрямую)
-    private void updateChart(DDESolver solver, String methodName, double a, double tau) {
-        XYChart.Series<Number, Number> series = new XYChart.Series<>();
-        series.setName(String.format("%s (a=%.2f, τ=%.2f)", methodName, a, tau));
+    private void configureControls() {
+        exampleCombo.getItems().setAll(CLASSIC, STATE, TWO_DELAYS);
+        exampleCombo.setValue(CLASSIC);
+        exampleCombo.setMaxWidth(Double.MAX_VALUE);
 
-        List<Double> tList = solver.getTList();
-        List<Double> yList = solver.getYList();
+        methodCombo.getItems().setAll("Метод Эйлера", "Метод Рунге-Кутты 4", "Метод Адамса-Бэшфорта 2");
+        methodCombo.setValue("Метод Рунге-Кутты 4");
+        methodCombo.setMaxWidth(Double.MAX_VALUE);
 
-        if (tList.size() != yList.size()) {
-            showErrorDialog("Ошибка данных", "Несовпадение размеров массивов");
+        setOptionalFieldsVisibility();
+        updateEquationAndDescription();
+        saveButton.setDisable(true);
+        tableButton.setDisable(true);
+
+        List<TextField> fields = List.of(aField, bField, tauField, tau2Field, hField, tMaxField, phiField);
+        for (TextField field : fields) {
+            field.setMaxWidth(Double.MAX_VALUE);
+            field.textProperty().addListener(this::inputChanged);
+        }
+        exampleCombo.valueProperty().addListener((observable, oldValue, newValue) -> {
+            setOptionalFieldsVisibility();
+            updateEquationAndDescription();
+            invalidateCurrentResult();
+        });
+        methodCombo.valueProperty().addListener((observable, oldValue, newValue) -> invalidateCurrentResult());
+    }
+
+    private void inputChanged(ObservableValue<? extends String> observable, String oldValue, String newValue) {
+        updateEquationAndDescription();
+        invalidateCurrentResult();
+    }
+
+    private void solveCurrent() {
+        CalculationInput input = readInput();
+        DDESolver.Method method = selectedMethod();
+
+        long startedAt = System.nanoTime();
+        DDESolver solver = createSolver(input);
+        solver.solve(method, input.a(), input.tau(), input.h(), input.tMax());
+        long elapsedNanos = System.nanoTime() - startedAt;
+
+        currentTimes = toArray(solver.getTList());
+        currentValues = toArray(solver.getYList());
+        currentInput = input;
+        currentMethodName = methodName(method);
+        saveButton.setDisable(false);
+        tableButton.setDisable(false);
+
+        lineChart.getData().setAll(series(currentMethodName, solver));
+        lineChart.setTitle("Решение: " + currentMethodName);
+        setSuccess(String.format(Locale.ROOT, "Готово: %d точек, %.3f мс", currentTimes.length, elapsedNanos / 1_000_000.0));
+    }
+
+    private void compareMethods() {
+        CalculationInput input = readInput();
+        long startedAt = System.nanoTime();
+        List<XYChart.Series<Number, Number>> series = new ArrayList<>();
+
+        for (DDESolver.Method method : DDESolver.Method.values()) {
+            DDESolver solver = solve(input, method);
+            series.add(series(methodName(method), solver));
+        }
+
+        lineChart.getData().setAll(series);
+        lineChart.setTitle("Сравнение численных методов");
+        long elapsedNanos = System.nanoTime() - startedAt;
+        setSuccess(String.format(Locale.ROOT, "Три метода рассчитаны за %.3f мс", elapsedNanos / 1_000_000.0));
+    }
+
+    private void showDifference() {
+        CalculationInput input = readInput();
+        DDESolver euler = solve(input, DDESolver.Method.EULER);
+        DDESolver rk4 = solve(input, DDESolver.Method.RUNGE_KUTTA_4);
+        ensureSameGrid(euler, rk4);
+
+        XYChart.Series<Number, Number> difference = new XYChart.Series<>();
+        difference.setName("|Эйлер − RK4|");
+        for (int index = 0; index < euler.getTList().size(); index++) {
+            difference.getData().add(new XYChart.Data<>(
+                    euler.getTList().get(index),
+                    Math.abs(euler.getYList().get(index) - rk4.getYList().get(index))
+            ));
+        }
+
+        lineChart.getData().setAll(difference);
+        lineChart.setTitle("Расхождение решений Эйлера и Рунге-Кутты 4");
+        setSuccess("График расхождения построен. Это разность двух приближений, а не точная погрешность.");
+    }
+
+    private void saveCurrent() {
+        requireCurrentResult();
+        File file = chooseCsvFile("Сохранить текущее решение", "dde-solution.csv");
+        if (file == null) {
             return;
         }
+
+        try (BufferedWriter writer = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
+            writer.write("t,y\n");
+            for (int index = 0; index < currentTimes.length; index++) {
+                writer.write(csv(currentTimes[index]) + "," + csv(currentValues[index]) + "\n");
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Не удалось сохранить файл: " + exception.getMessage(), exception);
+        }
+        setSuccess("Текущее решение сохранено: " + file.getName());
     }
-    // Для отображения ошибок
-    private void showAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
+
+    private void exportAll() {
+        CalculationInput input = readInput();
+        List<DDESolver> solvers = new ArrayList<>();
+        for (DDESolver.Method method : DDESolver.Method.values()) {
+            solvers.add(solve(input, method));
+        }
+        ensureSameGrid(solvers.get(0), solvers.get(1));
+        ensureSameGrid(solvers.get(0), solvers.get(2));
+
+        File file = chooseCsvFile("Сохранить решения всех методов", "dde-all-methods.csv");
+        if (file == null) {
+            return;
+        }
+
+        try (BufferedWriter writer = Files.newBufferedWriter(file.toPath(), StandardCharsets.UTF_8)) {
+            writer.write("t,Euler,RK4,AdamsBashforth2\n");
+            int size = solvers.get(0).getTList().size();
+            for (int index = 0; index < size; index++) {
+                writer.write(csv(solvers.get(0).getTList().get(index)) + ","
+                        + csv(solvers.get(0).getYList().get(index)) + ","
+                        + csv(solvers.get(1).getYList().get(index)) + ","
+                        + csv(solvers.get(2).getYList().get(index)) + "\n");
+            }
+        } catch (IOException exception) {
+            throw new IllegalStateException("Не удалось сохранить файл: " + exception.getMessage(), exception);
+        }
+        setSuccess("Решения трёх методов сохранены: " + file.getName());
+    }
+
+    private void showTable() {
+        requireCurrentResult();
+        Expression history = new ExpressionBuilder(currentInput.phi()).variable("t").build();
+        TableView<TableRowData> table = new TableView<>();
+
+        TableColumn<TableRowData, Double> tColumn = column("t", "t");
+        TableColumn<TableRowData, Double> yColumn = column("y(t)", "y");
+        TableColumn<TableRowData, Double> tau1Column = column("y(t − τ)", "tau1");
+        table.getColumns().addAll(tColumn, yColumn, tau1Column);
+
+        if (currentInput.usesSecondDelay()) {
+            table.getColumns().add(column("y(t − τ₂)", "tau2"));
+        }
+
+        for (int index = 0; index < currentTimes.length; index++) {
+            double t = currentTimes[index];
+            double yTau1 = delayedValue(t - currentInput.tau(), history);
+            double yTau2 = currentInput.usesSecondDelay()
+                    ? delayedValue(t - currentInput.tau2(), history)
+                    : Double.NaN;
+            table.getItems().add(new TableRowData(t, currentValues[index], yTau1, yTau2));
+        }
+
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        Stage tableStage = new Stage();
+        tableStage.initOwner(owner);
+        tableStage.setTitle("Таблица значений — " + currentMethodName);
+        tableStage.setScene(new Scene(table, 720, 520));
+        tableStage.show();
+    }
+
+    private TableColumn<TableRowData, Double> column(String title, String property) {
+        TableColumn<TableRowData, Double> column = new TableColumn<>(title);
+        switch (property) {
+            case "t" -> column.setCellValueFactory(data -> data.getValue().tProperty().asObject());
+            case "y" -> column.setCellValueFactory(data -> data.getValue().yProperty().asObject());
+            case "tau1" -> column.setCellValueFactory(data -> data.getValue().yTau1Property().asObject());
+            case "tau2" -> column.setCellValueFactory(data -> data.getValue().yTau2Property().asObject());
+            default -> throw new IllegalArgumentException("Неизвестный столбец: " + property);
+        }
+        return column;
+    }
+
+    private double delayedValue(double time, Expression history) {
+        if (time <= 0.0) {
+            return history.setVariable("t", time).evaluate();
+        }
+        if (time >= currentTimes[currentTimes.length - 1]) {
+            return currentValues[currentValues.length - 1];
+        }
+
+        int left = 0;
+        int right = currentTimes.length - 1;
+        while (right - left > 1) {
+            int middle = (left + right) / 2;
+            if (currentTimes[middle] <= time) {
+                left = middle;
+            } else {
+                right = middle;
+            }
+        }
+        double ratio = (time - currentTimes[left]) / (currentTimes[right] - currentTimes[left]);
+        return currentValues[left] + ratio * (currentValues[right] - currentValues[left]);
+    }
+
+    private CalculationInput readInput() {
+        boolean usesB = !CLASSIC.equals(exampleCombo.getValue());
+        boolean usesSecondDelay = TWO_DELAYS.equals(exampleCombo.getValue());
+
+        double a = InputValidator.parseFinite(aField.getText(), "a");
+        double b = usesB ? InputValidator.parseFinite(bField.getText(), "b") : 0.0;
+        double tau = InputValidator.parsePositive(tauField.getText(), "τ");
+        double tau2 = usesSecondDelay ? InputValidator.parsePositive(tau2Field.getText(), "τ₂") : 0.0;
+        double h = InputValidator.parsePositive(hField.getText(), "h");
+        double tMax = InputValidator.parseNonNegative(tMaxField.getText(), "t max");
+        String phi = InputValidator.requireText(phiField.getText(), "Начальная функция");
+        InputValidator.validateStep(h, tau, tau2);
+
+        String expression = switch (exampleCombo.getValue()) {
+            case STATE -> "a * y_tau1 + (" + Double.toString(b) + ") * y";
+            case TWO_DELAYS -> "a * y_tau1 + (" + Double.toString(b) + ") * y_tau2";
+            default -> "a * y_tau1";
+        };
+        return new CalculationInput(a, b, tau, tau2, h, tMax, phi, expression, usesSecondDelay);
+    }
+
+    private DDESolver solve(CalculationInput input, DDESolver.Method method) {
+        DDESolver solver = createSolver(input);
+        solver.solve(method, input.a(), input.tau(), input.h(), input.tMax());
+        return solver;
+    }
+
+    private DDESolver createSolver(CalculationInput input) {
+        DDESolver solver = new DDESolver();
+        solver.setTau2(input.tau2());
+        solver.setInitialFunctionExpression(input.phi());
+        solver.setExpression(input.expression());
+        return solver;
+    }
+
+    private DDESolver.Method selectedMethod() {
+        return switch (methodCombo.getValue()) {
+            case "Метод Эйлера" -> DDESolver.Method.EULER;
+            case "Метод Адамса-Бэшфорта 2" -> DDESolver.Method.ADAMS_BASHFORTH_2;
+            default -> DDESolver.Method.RUNGE_KUTTA_4;
+        };
+    }
+
+    private String methodName(DDESolver.Method method) {
+        return switch (method) {
+            case EULER -> "Метод Эйлера";
+            case RUNGE_KUTTA_4 -> "Метод Рунге-Кутты 4";
+            case ADAMS_BASHFORTH_2 -> "Метод Адамса-Бэшфорта 2";
+        };
+    }
+
+    private XYChart.Series<Number, Number> series(String name, DDESolver solver) {
+        XYChart.Series<Number, Number> series = new XYChart.Series<>();
+        series.setName(name);
+        for (int index = 0; index < solver.getTList().size(); index++) {
+            series.getData().add(new XYChart.Data<>(solver.getTList().get(index), solver.getYList().get(index)));
+        }
+        return series;
+    }
+
+    private void ensureSameGrid(DDESolver first, DDESolver second) {
+        if (first.getTList().size() != second.getTList().size()) {
+            throw new IllegalStateException("Методы вернули сетки разного размера");
+        }
+        for (int index = 0; index < first.getTList().size(); index++) {
+            if (Math.abs(first.getTList().get(index) - second.getTList().get(index)) > 1e-10) {
+                throw new IllegalStateException("Методы вернули несовпадающие временные сетки");
+            }
+        }
+    }
+
+    private void runSafely(Runnable action) {
+        try {
+            action.run();
+        } catch (IllegalArgumentException | IllegalStateException exception) {
+            setError(exception.getMessage());
+            showAlert(Alert.AlertType.ERROR, "Ошибка", exception.getMessage());
+        } catch (RuntimeException exception) {
+            setError("Непредвиденная ошибка вычисления");
+            showAlert(Alert.AlertType.ERROR, "Непредвиденная ошибка",
+                    exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
+        }
+    }
+
+    private void invalidateCurrentResult() {
+        currentTimes = null;
+        currentValues = null;
+        currentInput = null;
+        currentMethodName = null;
+        saveButton.setDisable(true);
+        tableButton.setDisable(true);
+        statusLabel.setText("Параметры изменены — выполните расчёт заново");
+        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #fff6dd; -fx-font-size: 13px;");
+    }
+
+    private void requireCurrentResult() {
+        if (currentTimes == null || currentValues == null || currentInput == null) {
+            throw new IllegalStateException("Сначала рассчитайте решение с текущими параметрами");
+        }
+    }
+
+    private void setOptionalFieldsVisibility() {
+        boolean usesB = !CLASSIC.equals(exampleCombo.getValue());
+        boolean usesSecondDelay = TWO_DELAYS.equals(exampleCombo.getValue());
+        setVisibleManaged(bField.getParent(), usesB);
+        setVisibleManaged(tau2Field.getParent(), usesSecondDelay);
+    }
+
+    private void updateEquationAndDescription() {
+        String a = display(aField.getText(), "a");
+        String b = display(bField.getText(), "b");
+        String tau = display(tauField.getText(), "τ");
+        String tau2 = display(tau2Field.getText(), "τ₂");
+
+        switch (exampleCombo.getValue()) {
+            case STATE -> {
+                equationLabel.setText("y′(t) = " + a + "·y(t−" + tau + ") + " + b + "·y(t)");
+                descriptionLabel.setText("Запаздывающее и текущее состояния влияют на скорость изменения решения.");
+            }
+            case TWO_DELAYS -> {
+                equationLabel.setText("y′(t) = " + a + "·y(t−" + tau + ") + " + b + "·y(t−" + tau2 + ")");
+                descriptionLabel.setText("Правая часть использует два предыдущих состояния с разными задержками.");
+            }
+            default -> {
+                equationLabel.setText("y′(t) = " + a + "·y(t−" + tau + ")");
+                descriptionLabel.setText("Классическое уравнение с одной постоянной задержкой.");
+            }
+        }
+    }
+
+    private void showHelp() {
+        showAlert(Alert.AlertType.INFORMATION, "Справка",
+                "Задайте коэффициенты, задержки, шаг, конец интервала и историю φ(t) для t ≤ 0.\n\n"
+                        + "Шаг должен быть положительным и не превышать используемые задержки. "
+                        + "Допустимы выражения exp4j, например: 1, sin(t), exp(t).\n\n"
+                        + "«График расхождения» показывает |Эйлер − RK4|. Это полезная оценка согласованности, "
+                        + "но не точная ошибка относительно аналитического решения.");
+    }
+
+    private File chooseCsvFile(String title, String initialName) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle(title);
+        chooser.setInitialFileName(initialName);
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV-файлы", "*.csv"));
+        File file = chooser.showSaveDialog(owner);
+        if (file != null && !file.getName().toLowerCase(Locale.ROOT).endsWith(".csv")) {
+            file = new File(file.getParentFile(), file.getName() + ".csv");
+        }
+        return file;
+    }
+
+    private void showAlert(Alert.AlertType type, String title, String message) {
+        Alert alert = new Alert(type);
+        alert.initOwner(owner);
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
     }
-    // Интерполяция для системы (x и y)
-    private double getSystemYAt(double t, double[] ts, double[] ys) {
-        if (t <= ts[0]) return 1.0;
-        if (t >= ts[ts.length - 1]) return ys[ys.length - 1];
 
-        for (int i = 0; i < ts.length - 1; i++) {
-            if (ts[i] <= t && t < ts[i + 1]) {
-                double t1 = ts[i];
-                double t2 = ts[i + 1];
-                double y1 = ys[i];
-                double y2 = ys[i + 1];
-                return y1 + (y2 - y1) * (t - t1) / (t2 - t1);
-            }
-        }
-        return ys[0];
-    }
-    // Интерполяция для вычисления y(t-τ)
-    private double getInterpolatedY(double t, double[] ts, double[] ys) {
-        if (t <= ts[0]) return ys[0];
-        if (t >= ts[ts.length - 1]) return ys[ys.length - 1];
-
-        for (int i = 0; i < ts.length - 1; i++) {
-            if (ts[i] <= t && t < ts[i + 1]) {
-                double t1 = ts[i];
-                double t2 = ts[i + 1];
-                double y1 = ys[i];
-                double y2 = ys[i + 1];
-                return y1 + (y2 - y1) * (t - t1) / (t2 - t1);
-            }
-        }
-        return ys[0];
+    private void setSuccess(String message) {
+        statusLabel.setText(message);
+        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #e4f6e8; -fx-font-size: 13px;");
     }
 
-    // Генерация текстового вида уравнения (для label)
-    private String getEquationText(String example, String a, String b, String tau, String tau2) {
-        String aShow = (a == null || a.isEmpty()) ? "a" : a;
-        String bShow = (b == null || b.isEmpty()) ? "b" : b;
-        String tauShow = (tau == null || tau.isEmpty()) ? "τ" : tau;
-        String tau2Show = (tau2 == null || tau2.isEmpty()) ? "τ₂" : tau2;
-        switch (example) {
-            case "Классика: ẏ(t) = a·y(t-τ)":
-                return "ẏ(t) = " + aShow + "·y(t-" + tauShow + ")";
-            case "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)":
-                return "ẏ(t) = " + aShow + "·y(t-" + tauShow + ") + " + bShow + "·y(t)";
-            case "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)":
-                return "ẏ(t) = " + aShow + "·y(t-" + tauShow + ") + " + bShow + "·y(t-" + tau2Show + ")";
-            default:
-                return "";
-        }
+    private void setError(String message) {
+        statusLabel.setText("Ошибка: " + message);
+        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #fde8e8; -fx-font-size: 13px;");
     }
 
-    // === откуда  ===
+    private VBox labelled(String label, javafx.scene.Node control) {
+        Label title = new Label(label);
+        VBox box = new VBox(4, title, control);
+        box.setFillWidth(true);
+        return box;
+    }
+
+    private VBox section(String title, javafx.scene.Node... nodes) {
+        Label heading = new Label(title);
+        heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
+        VBox box = new VBox(9);
+        box.getChildren().add(heading);
+        box.getChildren().addAll(nodes);
+        box.setPadding(new Insets(12));
+        box.setStyle("-fx-border-color: #d7dde5; -fx-border-radius: 6; -fx-background-radius: 6;"
+                + "-fx-background-color: white;");
+        return box;
+    }
+
+    private static void setVisibleManaged(javafx.scene.Node node, boolean visible) {
+        if (node == null) {
+            return;
+        }
+        node.setVisible(visible);
+        node.setManaged(visible);
+    }
+
+    private static String display(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static double[] toArray(List<Double> values) {
+        return values.stream().mapToDouble(Double::doubleValue).toArray();
+    }
+
+    private static String csv(double value) {
+        return Double.toString(value);
+    }
+
+    private record CalculationInput(
+            double a,
+            double b,
+            double tau,
+            double tau2,
+            double h,
+            double tMax,
+            String phi,
+            String expression,
+            boolean usesSecondDelay
+    ) {
+    }
+
     public static void main(String[] args) {
-        launch();
+        launch(args);
     }
 }
