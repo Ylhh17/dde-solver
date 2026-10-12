@@ -1,0 +1,29 @@
+﻿ЧЕТВЁРТЫЙ ЭТАП
+
+1. Скопируйте в корень проекта с сохранением структуры:
+   .gitattributes
+   .github/
+   .mvn/
+   README.md
+   mvnw
+   mvnw.cmd
+
+2. Удалите из проекта:
+   src/main/java/dde/CSVExporter.java
+   src/main/java/dde/GraphWindow.java
+   src/main/resources/META-INF/MANIFEST.MF
+
+3. В PowerShell из корня проекта выполните:
+   .\mvnw.cmd clean test
+
+4. Ожидаемый результат:
+   Tests run: 15, Failures: 0, Errors: 0, Skipped: 0
+   BUILD SUCCESS
+
+5. Запуск приложения:
+   .\mvnw.cmd javafx:run
+
+6. После проверки:
+   git add -A
+   git commit -m "Добавление Maven Wrapper и автоматической CI-проверки"
+   git push origin develop
