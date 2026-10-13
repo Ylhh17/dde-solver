@@ -1,0 +1,62 @@
+.root {
+    -fx-font-family: "Segoe UI", "Inter", sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #f3f6fb;
+}
+.scroll-pane, .scroll-pane > .viewport {
+    -fx-background-color: #f3f6fb;
+}
+.section-card {
+    -fx-background-color: white;
+    -fx-background-radius: 10;
+    -fx-border-color: #dce3ed;
+    -fx-border-radius: 10;
+    -fx-effect: dropshadow(gaussian, rgba(30, 50, 80, 0.07), 12, 0.15, 0, 3);
+}
+.section-title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1f2a44;
+}
+.equation-label {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #14213d;
+}
+.description-label { -fx-text-fill: #5b6475; }
+.button {
+    -fx-background-color: #e8eef8;
+    -fx-text-fill: #21314d;
+    -fx-background-radius: 7;
+    -fx-padding: 8 12;
+    -fx-cursor: hand;
+}
+.button:hover { -fx-background-color: #d9e5f7; }
+.button:pressed { -fx-background-color: #c9d9f1; }
+.text-field, .combo-box {
+    -fx-background-color: white;
+    -fx-border-color: #cdd6e4;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 5;
+}
+.text-field:focused, .combo-box:focused { -fx-border-color: #4a78c2; }
+.status-label {
+    -fx-padding: 10 12;
+    -fx-background-radius: 7;
+    -fx-font-size: 13px;
+}
+.status-info { -fx-background-color: #eaf1fb; -fx-text-fill: #29466f; }
+.status-success { -fx-background-color: #e4f6e8; -fx-text-fill: #17632b; }
+.status-warning { -fx-background-color: #fff4d9; -fx-text-fill: #795500; }
+.status-error { -fx-background-color: #fde8e8; -fx-text-fill: #941f1f; }
+.solution-chart {
+    -fx-background-color: white;
+    -fx-background-radius: 10;
+    -fx-border-color: #dce3ed;
+    -fx-border-radius: 10;
+    -fx-padding: 8;
+}
+.chart-plot-background { -fx-background-color: #fbfcfe; }
+.chart-vertical-grid-lines, .chart-horizontal-grid-lines { -fx-stroke: #e6ebf2; }
+.table-view { -fx-background-color: white; -fx-border-color: #dce3ed; }
