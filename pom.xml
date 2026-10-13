@@ -6,7 +6,7 @@
 
     <groupId>ru.ylhh17</groupId>
     <artifactId>dde-solver</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>DDE Solver</name>
     <description>Численное решение дифференциальных уравнений с запаздыванием</description>
 
@@ -49,11 +49,28 @@
                 <version>3.5.4</version>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>dde.AppLauncher</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
+            </plugin>
+            <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>0.0.8</version>
                 <configuration>
-                    <mainClass>dde.Main</mainClass>
+                    <mainClass>dde.AppLauncher</mainClass>
                     <options>
                         <option>--enable-native-access=javafx.graphics</option>
                     </options>

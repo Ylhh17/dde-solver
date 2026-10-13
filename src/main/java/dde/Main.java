@@ -12,6 +12,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TableView;
@@ -36,9 +37,9 @@ import java.util.Locale;
 
 public class Main extends Application {
 
-    private static final String CLASSIC = "Классика: ẏ(t) = a·y(t-τ)";
-    private static final String STATE = "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)";
-    private static final String TWO_DELAYS = "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)";
+    static final String CLASSIC = "Классика: ẏ(t) = a·y(t-τ)";
+    static final String STATE = "Состояние: ẏ(t) = a·y(t-τ) + b·y(t)";
+    static final String TWO_DELAYS = "Две задержки: ẏ(t) = a·y(t-τ₁) + b·y(t-τ₂)";
 
     private final TextField aField = new TextField("-1");
     private final TextField bField = new TextField("0.5");
@@ -49,6 +50,7 @@ public class Main extends Application {
     private final TextField phiField = new TextField("1");
     private final TextField exactField = new TextField();
 
+    private final ComboBox<DemoPreset> presetCombo = new ComboBox<>();
     private final ComboBox<String> exampleCombo = new ComboBox<>();
     private final ComboBox<String> methodCombo = new ComboBox<>();
     private final Label equationLabel = new Label();
@@ -63,6 +65,7 @@ public class Main extends Application {
     private double[] currentValues;
     private CalculationInput currentInput;
     private String currentMethodName;
+    private boolean applyingPreset;
 
     @Override
     public void start(Stage stage) {
@@ -78,11 +81,13 @@ public class Main extends Application {
         lineChart.setCreateSymbols(false);
         lineChart.setAnimated(false);
         lineChart.setMinHeight(480);
+        lineChart.getStyleClass().add("solution-chart");
 
         Button solveButton = new Button("Рассчитать");
         Button compareButton = new Button("Сравнить методы");
         Button errorButton = new Button("График расхождения");
         Button exactButton = new Button("Сравнить с точным");
+        Button errorTableButton = new Button("Таблица погрешностей");
         Button exportAllButton = new Button("Экспорт всех методов");
         Button helpButton = new Button("Справка");
 
@@ -90,6 +95,7 @@ public class Main extends Application {
         compareButton.setMaxWidth(Double.MAX_VALUE);
         errorButton.setMaxWidth(Double.MAX_VALUE);
         exactButton.setMaxWidth(Double.MAX_VALUE);
+        errorTableButton.setMaxWidth(Double.MAX_VALUE);
         tableButton.setMaxWidth(Double.MAX_VALUE);
         saveButton.setMaxWidth(Double.MAX_VALUE);
         exportAllButton.setMaxWidth(Double.MAX_VALUE);
@@ -99,6 +105,7 @@ public class Main extends Application {
         compareButton.setTooltip(new Tooltip("Построить решения всеми тремя методами"));
         errorButton.setTooltip(new Tooltip("Показать модуль разности решений Эйлера и RK4"));
         exactButton.setTooltip(new Tooltip("Сравнить выбранный метод с заданным аналитическим решением"));
+        errorTableButton.setTooltip(new Tooltip("Сравнить показатели погрешности трёх методов"));
         tableButton.setTooltip(new Tooltip("Открыть таблицу последнего рассчитанного решения"));
         saveButton.setTooltip(new Tooltip("Сохранить последнее рассчитанное решение"));
         exportAllButton.setTooltip(new Tooltip("Рассчитать и сохранить три метода в один CSV"));
@@ -107,6 +114,7 @@ public class Main extends Application {
         compareButton.setOnAction(event -> runSafely(this::compareMethods));
         errorButton.setOnAction(event -> runSafely(this::showDifference));
         exactButton.setOnAction(event -> runSafely(this::compareWithExact));
+        errorTableButton.setOnAction(event -> runSafely(this::showErrorTable));
         tableButton.setOnAction(event -> runSafely(this::showTable));
         saveButton.setOnAction(event -> runSafely(this::saveCurrent));
         exportAllButton.setOnAction(event -> runSafely(this::exportAll));
@@ -122,6 +130,7 @@ public class Main extends Application {
         parameters.setPrefWidth(210);
 
         VBox equation = section("Уравнение",
+                labelled("Демонстрационный пример", presetCombo),
                 labelled("Начальная функция φ(t), t ≤ 0", phiField),
                 labelled("Точное решение y(t), необязательно", exactField),
                 labelled("Тип уравнения", exampleCombo),
@@ -131,13 +140,13 @@ public class Main extends Application {
         setOptionalFieldsVisibility();
 
         VBox actions = section("Действия", solveButton, compareButton, errorButton, exactButton,
-                tableButton, saveButton, exportAllButton, helpButton);
+                errorTableButton, tableButton, saveButton, exportAllButton, helpButton);
         actions.setPrefWidth(220);
 
-        equationLabel.setStyle("-fx-font-size: 16px; -fx-font-weight: bold;");
+        equationLabel.getStyleClass().add("equation-label");
         equationLabel.setWrapText(true);
         descriptionLabel.setWrapText(true);
-        descriptionLabel.setStyle("-fx-text-fill: #555555;");
+        descriptionLabel.getStyleClass().add("description-label");
         VBox information = section("Текущая задача", equationLabel, descriptionLabel);
         HBox.setHgrow(information, Priority.ALWAYS);
 
@@ -146,7 +155,7 @@ public class Main extends Application {
         top.setPadding(new Insets(12));
 
         statusLabel.setMaxWidth(Double.MAX_VALUE);
-        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #eef3f8; -fx-font-size: 13px;");
+        statusLabel.getStyleClass().addAll("status-label", "status-info");
 
         VBox content = new VBox(12, top, statusLabel, lineChart);
         content.setPadding(new Insets(10));
@@ -156,14 +165,28 @@ public class Main extends Application {
         scrollPane.setFitToWidth(true);
         scrollPane.setFitToHeight(true);
 
-        stage.setScene(new Scene(scrollPane, 1280, 820));
+        Scene scene = new Scene(scrollPane, 1280, 820);
+        var stylesheet = Main.class.getResource("/dde/app.css");
+        if (stylesheet != null) {
+            scene.getStylesheets().add(stylesheet.toExternalForm());
+        }
+        stage.setScene(scene);
         stage.setMinWidth(980);
         stage.setMinHeight(700);
-        stage.setTitle("DDE Solver");
+        stage.setTitle("DDE Solver 1.0");
         stage.show();
     }
 
     private void configureControls() {
+        presetCombo.getItems().setAll(DemoPreset.builtIn());
+        presetCombo.setPromptText("Выберите готовый пример");
+        presetCombo.setMaxWidth(Double.MAX_VALUE);
+        presetCombo.valueProperty().addListener((observable, oldValue, preset) -> {
+            if (preset != null) {
+                applyPreset(preset);
+            }
+        });
+
         exampleCombo.getItems().setAll(CLASSIC, STATE, TWO_DELAYS);
         exampleCombo.setValue(CLASSIC);
         exampleCombo.setMaxWidth(Double.MAX_VALUE);
@@ -183,6 +206,9 @@ public class Main extends Application {
             field.textProperty().addListener(this::inputChanged);
         }
         exampleCombo.valueProperty().addListener((observable, oldValue, newValue) -> {
+            if (!applyingPreset) {
+                presetCombo.getSelectionModel().clearSelection();
+            }
             setOptionalFieldsVisibility();
             updateEquationAndDescription();
             invalidateCurrentResult();
@@ -190,7 +216,30 @@ public class Main extends Application {
         methodCombo.valueProperty().addListener((observable, oldValue, newValue) -> invalidateCurrentResult());
     }
 
+    private void applyPreset(DemoPreset preset) {
+        applyingPreset = true;
+        try {
+            exampleCombo.setValue(preset.equationType());
+            aField.setText(preset.a());
+            bField.setText(preset.b());
+            tauField.setText(preset.tau());
+            tau2Field.setText(preset.tau2());
+            hField.setText(preset.step());
+            tMaxField.setText(preset.endTime());
+            phiField.setText(preset.history());
+            exactField.setText(preset.exact());
+        } finally {
+            applyingPreset = false;
+        }
+        updateEquationAndDescription();
+        invalidateCurrentResult();
+        setInfo("Загружен пример: " + preset.name());
+    }
+
     private void inputChanged(ObservableValue<? extends String> observable, String oldValue, String newValue) {
+        if (!applyingPreset) {
+            presetCombo.getSelectionModel().clearSelection();
+        }
         updateEquationAndDescription();
         invalidateCurrentResult();
     }
@@ -228,16 +277,18 @@ public class Main extends Application {
         CalculationInput input = readInput();
         long startedAt = System.nanoTime();
         List<XYChart.Series<Number, Number>> series = new ArrayList<>();
+        List<NumericalSolution> solutions = new ArrayList<>();
 
         for (DDESolver.Method method : DDESolver.Method.values()) {
             DDESolver solver = solve(input, method);
-            series.add(series(methodName(method), new NumericalSolution(method, solver.getTList(), solver.getYList())));
+            NumericalSolution solution = new NumericalSolution(method, solver.getTList(), solver.getYList());
+            solutions.add(solution);
+            series.add(series(methodName(method), solution));
         }
 
         ExactSolution exact = optionalExactSolution(input);
         if (exact != null) {
-            DDESolver referenceGrid = solve(input, DDESolver.Method.RUNGE_KUTTA_4);
-            series.add(exactSeries(exact, referenceGrid.getTList()));
+            series.add(exactSeries(exact, solutions.getFirst().times()));
         }
         lineChart.getData().setAll(series);
         lineChart.setTitle(exact == null ? "Сравнение численных методов" : "Сравнение методов с точным решением");
@@ -285,6 +336,51 @@ public class Main extends Application {
         lineChart.getData().setAll(series(currentMethodName, numerical), exactSeries(exact, numerical.times()));
         lineChart.setTitle("Численное и точное решения");
         setSuccess(metricsMessage(numerical.size(), elapsedNanos, metrics));
+    }
+
+    private void showErrorTable() {
+        CalculationInput input = readInput();
+        ExactSolution exact = requiredExactSolution(input);
+        List<MethodErrorRow> rows = new ArrayList<>();
+        for (DDESolver.Method method : DDESolver.Method.values()) {
+            DDESolver solver = solve(input, method);
+            NumericalSolution solution = new NumericalSolution(method, solver.getTList(), solver.getYList());
+            rows.add(MethodErrorRow.from(methodName(method), ErrorMetrics.compare(solution, exact)));
+        }
+
+        TableView<MethodErrorRow> table = new TableView<>();
+        TableColumn<MethodErrorRow, String> method = new TableColumn<>("Метод");
+        method.setCellValueFactory(data -> new javafx.beans.property.SimpleStringProperty(data.getValue().method()));
+        table.getColumns().add(method);
+        table.getColumns().add(metricColumn("max |ошибка|", MethodErrorRow::maximumAbsolute));
+        table.getColumns().add(metricColumn("max относительная", MethodErrorRow::maximumRelative));
+        table.getColumns().add(metricColumn("RMS", MethodErrorRow::rootMeanSquare));
+        table.getColumns().add(metricColumn("В конечной точке", MethodErrorRow::finalAbsolute));
+        table.getItems().setAll(rows);
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+
+        Stage stage = new Stage();
+        stage.initOwner(owner);
+        stage.setTitle("Погрешности численных методов");
+        stage.setScene(new Scene(table, 900, 280));
+        stage.show();
+        setSuccess("Таблица погрешностей построена для трёх методов");
+    }
+
+    private TableColumn<MethodErrorRow, Number> metricColumn(
+            String title, java.util.function.ToDoubleFunction<MethodErrorRow> extractor) {
+        TableColumn<MethodErrorRow, Number> column = new TableColumn<>(title);
+        column.setCellValueFactory(data -> new javafx.beans.property.SimpleDoubleProperty(
+                extractor.applyAsDouble(data.getValue())));
+        column.setCellFactory(value -> new javafx.scene.control.TableCell<>() {
+            @Override
+            protected void updateItem(Number item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null
+                        : (Double.isNaN(item.doubleValue()) ? "—" : String.format(Locale.ROOT, "%.6e", item.doubleValue())));
+            }
+        });
+        return column;
     }
 
     private void saveCurrent() {
@@ -550,8 +646,7 @@ public class Main extends Application {
         currentMethodName = null;
         saveButton.setDisable(true);
         tableButton.setDisable(true);
-        statusLabel.setText("Параметры изменены — выполните расчёт заново");
-        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #fff6dd; -fx-font-size: 13px;");
+        setStatus("Параметры изменены — выполните расчёт заново", "status-warning");
     }
 
     private void requireCurrentResult() {
@@ -594,8 +689,10 @@ public class Main extends Application {
                 "Задайте коэффициенты, задержки, шаг, конец интервала и историю φ(t) для t ≤ 0.\n\n"
                         + "Шаг должен быть положительным и не превышать используемые задержки. "
                         + "Допустимы выражения exp4j, например: 1, sin(t), exp(t).\n\n"
+                        + "Выберите демонстрационный пример, чтобы автоматически заполнить проверенный набор параметров.\n\n"
                         + "«График расхождения» показывает |Эйлер − RK4|. Это полезная оценка согласованности, "
-                        + "но не точная ошибка относительно аналитического решения.");
+                        + "но не точная ошибка относительно аналитического решения. Для точной оценки заполните "
+                        + "поле аналитического решения и откройте таблицу погрешностей.");
     }
 
     private File chooseCsvFile(String title, String initialName) {
@@ -620,13 +717,21 @@ public class Main extends Application {
     }
 
     private void setSuccess(String message) {
-        statusLabel.setText(message);
-        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #e4f6e8; -fx-font-size: 13px;");
+        setStatus(message, "status-success");
+    }
+
+    private void setInfo(String message) {
+        setStatus(message, "status-info");
     }
 
     private void setError(String message) {
-        statusLabel.setText("Ошибка: " + message);
-        statusLabel.setStyle("-fx-padding: 8; -fx-background-color: #fde8e8; -fx-font-size: 13px;");
+        setStatus("Ошибка: " + message, "status-error");
+    }
+
+    private void setStatus(String message, String styleClass) {
+        statusLabel.setText(message);
+        statusLabel.getStyleClass().removeAll("status-info", "status-success", "status-warning", "status-error");
+        statusLabel.getStyleClass().add(styleClass);
     }
 
     private VBox labelled(String label, javafx.scene.Node control) {
@@ -638,13 +743,12 @@ public class Main extends Application {
 
     private VBox section(String title, javafx.scene.Node... nodes) {
         Label heading = new Label(title);
-        heading.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
+        heading.getStyleClass().add("section-title");
         VBox box = new VBox(9);
-        box.getChildren().add(heading);
+        box.getChildren().addAll(heading, new Separator());
         box.getChildren().addAll(nodes);
-        box.setPadding(new Insets(12));
-        box.setStyle("-fx-border-color: #d7dde5; -fx-border-radius: 6; -fx-background-radius: 6;"
-                + "-fx-background-color: white;");
+        box.setPadding(new Insets(14));
+        box.getStyleClass().add("section-card");
         return box;
     }
 

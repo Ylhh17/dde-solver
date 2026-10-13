@@ -27,3 +27,11 @@ jobs:
 
       - name: Verify with Maven Wrapper
         run: ./mvnw --batch-mode --no-transfer-progress clean verify
+
+      - name: Upload application JAR
+        uses: actions/upload-artifact@v6
+        with:
+          name: dde-solver-${{ github.sha }}
+          path: target/dde-solver-1.0.0.jar
+          if-no-files-found: error
+          retention-days: 14
