@@ -1,190 +1,202 @@
+<div align="center">
+
 # DDE Solver
 
-Версия 1.0.0 · JavaFX-приложение для численного анализа DDE
+**A desktop application for solving and visualizing delay differential equations**
 
-[![Java CI](https://github.com/Ylhh17/diplome/actions/workflows/java-ci.yml/badge.svg?branch=develop)](https://github.com/Ylhh17/diplome/actions/workflows/java-ci.yml)
+[![Java CI](https://github.com/Ylhh17/dde-solver/actions/workflows/java-ci.yml/badge.svg?branch=master)](https://github.com/Ylhh17/dde-solver/actions/workflows/java-ci.yml)
+[![Release](https://img.shields.io/github/v/release/Ylhh17/dde-solver?display_name=tag)](https://github.com/Ylhh17/dde-solver/releases/latest)
+[![License](https://img.shields.io/github/license/Ylhh17/dde-solver)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-24-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/24/)
 
-Настольное JavaFX-приложение для численного решения дифференциальных уравнений с постоянным запаздыванием (DDE), визуализации результатов и экспорта данных в CSV.
+[English](README.md) · [Русский](README_RU.md)
 
-Проект создан на основе выпускной квалификационной работы и дорабатывается как самостоятельный открытый программный продукт.
+[**Download for Windows**](https://github.com/Ylhh17/dde-solver/releases/latest) · [Features](#features) · [Build from source](#build-from-source) · [Limitations](#limitations)
 
-## Возможности
+</div>
 
-- Метод Эйлера.
-- Метод Рунге — Кутты четвёртого порядка.
-- Метод Адамса — Бэшфорта второго порядка.
-- Уравнения с одной или двумя постоянными задержками.
-- Начальная функция `φ(t)` для `t ≤ 0`, задаваемая выражением exp4j.
-- Сравнение трёх численных методов на одном графике.
-- График расхождения решений Эйлера и RK4.
-- Сравнение с заданным аналитическим решением.
-- Четыре встроенных демонстрационных примера.
-- Отдельная таблица погрешностей трёх методов.
-- Максимальная абсолютная, относительная, RMS и конечная ошибки.
-- Таблица рассчитанных и задержанных значений.
-- Экспорт текущего решения или всех методов в CSV.
-- Проверка входных данных и понятные сообщения об ошибках.
-- Автоматические модульные тесты и CI-проверка на GitHub.
+DDE Solver is an educational desktop tool for numerical experiments with **delay differential equations (DDEs)**. It provides three numerical methods, interactive charts, comparison with an exact solution, error metrics, data tables, and CSV export.
 
+The ready-to-use Windows package includes its own Java runtime. No separate Java or Maven installation is required.
 
-## Быстрый старт
+> The current application interface is in Russian. English interface localization is planned for a future release; this documentation is available in both languages.
 
-1. Установите JDK 24.
-2. Клонируйте репозиторий или скачайте исходный код.
-3. Запустите в корне проекта:
+## Features
 
-```powershell
-.\mvnw.cmd clean javafx:run
-```
+- Euler, fourth-order Runge–Kutta (RK4), and second-order Adams–Bashforth methods.
+- Scalar equations with one or two constant delays.
+- User-defined history function \(\varphi(t)\) for \(t \le 0\).
+- Linear interpolation of delayed values between grid points.
+- Side-by-side comparison of all three methods.
+- Comparison with a user-defined exact solution.
+- Maximum absolute, relative, RMS, and final-point error metrics.
+- Four built-in demonstration problems.
+- Tables of computed, delayed, and error values.
+- CSV export for one method or all methods.
+- Light and dark interface themes.
+- Input validation with clear error messages.
+- Automated tests, continuous integration, and a portable Windows build.
 
-Для знакомства выберите в приложении демонстрационный пример **«Точная: одна задержка»**, затем нажмите **«Сравнить методы»** или **«Таблица погрешностей»**.
+## Download
 
-## Демонстрационные задачи
+1. Open the [latest release](https://github.com/Ylhh17/dde-solver/releases/latest).
+2. Download `DDE-Solver-1.0.0-windows-x64.zip`.
+3. Extract the complete archive.
+4. Run `DDE Solver.exe` inside the extracted `DDE Solver` directory.
 
-| Пример | Модель | Точное решение |
+Keep the `app` and `runtime` directories next to the executable. The application image is portable and includes the required Java runtime.
+
+Windows may display a SmartScreen warning because the application is not code-signed. Review the downloaded file and choose **More info → Run anyway** only if it came from this repository's official release page.
+
+## Mathematical model
+
+The application solves initial-history problems of the form
+
+\[
+y'(t) = f\!\left(t, y(t), y(t-\tau_1), y(t-\tau_2)\right), \quad t \ge 0,
+\]
+
+\[
+y(t) = \varphi(t), \quad t \le 0.
+\]
+
+The user interface currently provides these right-hand-side templates:
+
+\[
+y'(t)=a\,y(t-\tau),
+\]
+
+\[
+y'(t)=a\,y(t-\tau)+b\,y(t),
+\]
+
+\[
+y'(t)=a\,y(t-\tau_1)+b\,y(t-\tau_2).
+\]
+
+Expressions for the history and exact solution are entered using exp4j syntax, for example `exp(0.4*t)`.
+
+## Quick example
+
+After launching the application:
+
+1. Select **«Точная: одна задержка»** from the example list.
+2. Choose **«Рунге–Кутты 4»**.
+3. Click **«Сравнить с точным»** to compare the numerical and exact solutions.
+4. Open **«Таблица погрешностей»** to compare all three methods.
+5. Export the results to CSV if needed.
+
+## Demo problems
+
+| Preset | Model | Exact solution |
 |---|---|---|
-| Базовая | Одна задержка, затухающая динамика | Не задано |
-| Точная: одна задержка | `y′(t) = a·y(t−τ)` | `exp(0.4*t)` |
-| Точная: задержка и состояние | Задержанное и текущее значения | `exp(0.3*t)` |
-| Точная: две задержки | Два задержанных значения | `exp(0.3*t)` |
+| Basic | One delayed term with decaying dynamics | Not provided |
+| Exact: one delay | \(y'(t)=a\,y(t-\tau)\) | `exp(0.4*t)` |
+| Exact: delay and state | Delayed and current-state terms | `exp(0.3*t)` |
+| Exact: two delays | Two delayed terms | `exp(0.3*t)` |
 
-## Математическая модель
+## Build from source
 
-Приложение решает задачи вида
+### Requirements
 
-```text
-y′(t) = f(t, y(t), y(t − τ₁), y(t − τ₂)),  t ≥ 0,
-y(t) = φ(t),                              t ≤ 0.
-```
+- JDK 24.
+- Windows, Linux, or macOS.
+- Git is optional if you download the source archive.
 
-В интерфейсе доступны три шаблона правой части:
+Maven, the JavaFX SDK, and exp4j do not need to be installed separately. Maven Wrapper downloads the pinned Maven version, and Maven resolves the project dependencies.
 
-```text
-y′(t) = a·y(t − τ)
-y′(t) = a·y(t − τ) + b·y(t)
-y′(t) = a·y(t − τ₁) + b·y(t − τ₂)
-```
-
-Задержанные значения между узлами сетки вычисляются линейной интерполяцией. Шаг должен быть положительным и не превышать используемые задержки.
-
-## Требования
-
-- JDK 24 для запуска из исходников.
-- Windows, Linux или macOS.
-
-Устанавливать Maven, JavaFX SDK и `exp4j` отдельно не требуется. Maven Wrapper загружает закреплённую версию Maven, а зависимости проекта загружаются из Maven Central.
-
-## Запуск в Windows
-
-Откройте PowerShell в корне проекта:
+### Windows
 
 ```powershell
+git clone https://github.com/Ylhh17/dde-solver.git
+cd dde-solver
 .\mvnw.cmd clean javafx:run
 ```
 
-При первом запуске Maven Wrapper и зависимости будут загружены автоматически.
-
-## Запуск в Linux/macOS
+### Linux and macOS
 
 ```bash
+git clone https://github.com/Ylhh17/dde-solver.git
+cd dde-solver
 ./mvnw clean javafx:run
 ```
 
-Если после распаковки архива отсутствует право на выполнение:
+If the wrapper is not executable after extracting an archive:
 
 ```bash
 chmod +x mvnw
 ```
 
-## Автономная сборка Windows
+## Tests
 
-Сценарий формирует переносимую папку приложения вместе с Java Runtime, поэтому пользователю готовой сборки не требуется отдельно устанавливать JDK. Запустите в PowerShell:
+Run the complete automated test suite:
+
+```powershell
+# Windows
+.\mvnw.cmd clean test
+```
+
+```bash
+# Linux and macOS
+./mvnw clean test
+```
+
+The test suite covers the numerical core, history evaluation, interval boundaries, interpolation, parameter validation, analytical reference problems with one and two delays, and observed convergence orders.
+
+## Windows package
+
+A portable Windows application image can be built locally with a full JDK 24 installation containing `jpackage`:
 
 ```powershell
 .\scripts\package-windows.ps1
 ```
 
-Результат появится в `target/distribution/DDE-Solver-1.0.0-windows-x64.zip`. Сценарий использует `jpackage` из JDK 24.
-
-## Запуск в IntelliJ IDEA
-
-1. Откройте каталог проекта.
-2. Разрешите IntelliJ IDEA загрузить Maven-проект из `pom.xml`.
-3. Откройте окно **Maven**.
-4. Запустите `Plugins → javafx → javafx:run`.
-
-## Тестирование
-
-Windows:
-
-```powershell
-.\mvnw.cmd clean test
-```
-
-Linux/macOS:
-
-```bash
-./mvnw clean test
-```
-
-**35 автоматических тестов** проверяют численное ядро, использование истории, границы интервала, основные ограничения параметров и валидацию пользовательского ввода. Аналитические контрольные задачи с решением `exp(λt)` проверяют задачи с одной и двумя задержками, а также наблюдаемые порядки сходимости Эйлера, Адамса—Бэшфорта 2 и RK4.
-
-## Структура
+The archive is written to:
 
 ```text
-.github/workflows/java-ci.yml        # автоматическая сборка и тестирование
-.github/workflows/windows-release.yml # Windows-дистрибутив и GitHub Release
-.mvn/wrapper/                        # конфигурация Maven Wrapper
-src/main/java/dde/
-├── DDESolver.java                   # численные методы и интерполяция
-├── NumericalSolution.java           # неизменяемый результат расчёта
-├── ExactSolution.java               # аналитическое выражение решения
-├── ErrorMetrics.java                # показатели численной ошибки
-├── InputValidator.java              # проверка входных параметров
-├── Main.java                        # JavaFX-интерфейс
-├── AppLauncher.java                 # точка входа релизной сборки
-├── DemoPreset.java                  # готовые демонстрационные задачи
-├── MethodErrorRow.java              # строка таблицы погрешностей
-└── TableRowData.java                # модель строки таблицы
-src/main/resources/dde/app.css       # оформление интерфейса
-src/test/java/dde/
-├── DDESolverTest.java               # тесты численного ядра
-├── NumericalAnalysisTest.java       # точные задачи и порядок сходимости
-├── DemoPresetTest.java              # проверка встроенных примеров
-├── CalculationInputTest.java        # проверка моделей входных данных
-└── InputValidatorTest.java          # тесты валидации
-scripts/package-windows.ps1          # автономная Windows-сборка
-scripts/verify-release.ps1           # полная проверка перед релизом
-pom.xml                              # зависимости и параметры сборки
-mvnw / mvnw.cmd                      # запуск Maven без установки
+target/distribution/DDE-Solver-1.0.0-windows-x64.zip
 ```
 
-## Технологии
+## Technology
 
-- Java 24.
-- JavaFX 24.
-- Maven.
-- exp4j.
-- JUnit Jupiter.
-- GitHub Actions.
+- Java 24 and JavaFX 24.
+- Maven and Maven Wrapper.
+- exp4j for mathematical expressions.
+- JUnit Jupiter for automated testing.
+- GitHub Actions for CI and Windows packaging.
+- `jpackage` for the self-contained Windows application image.
 
-## Ограничения
+## Limitations
 
-- Реализованы только скалярные DDE с одной или двумя постоянными задержками.
-- Задержки должны быть положительными.
-- Шаг сетки не должен превышать ни одну используемую задержку.
-- График `|Эйлер − RK4|` показывает расхождение двух приближений, а не строгую оценку ошибки относительно точного решения.
-- Приложение предназначено для учебных и исследовательских экспериментов, а не для критически важных инженерных расчётов.
+- Only scalar DDEs are supported.
+- Equations may contain one or two positive constant delays.
+- The fixed grid step must not exceed any active delay.
+- Delayed values are obtained using linear interpolation.
+- The `|Euler − RK4|` chart shows disagreement between two approximations, not a rigorous error estimate.
+- The software is intended for education and exploratory numerical experiments, not safety-critical, clinical, or production engineering calculations.
 
-## Лицензия
+## Roadmap
 
-Проект распространяется по лицензии MIT. См. [LICENSE](LICENSE).
+Potential future improvements include:
 
-Изменения версий перечислены в [CHANGELOG.md](CHANGELOG.md).
+- English and Russian application localization.
+- Saving and loading experiment files.
+- Exporting charts as PNG images.
+- A gallery of applied DDE models.
+- Automated step-refinement and convergence studies.
+- Adaptive step-size control.
+- Systems of delay differential equations.
 
-## Ветвление
+See the [issue tracker](https://github.com/Ylhh17/dde-solver/issues) for planned work and bug reports.
 
-- `master` — стабильная версия.
-- `develop` — текущая разработка.
+## Development
 
-Перед объединением изменений должны успешно выполняться автоматические тесты.
+- `master` contains stable releases.
+- `develop` contains ongoing development.
+- Pull requests must pass the automated test workflow before merging.
+
+Version history is available in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+DDE Solver is distributed under the [MIT License](LICENSE).
