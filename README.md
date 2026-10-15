@@ -50,31 +50,46 @@ Windows may display a SmartScreen warning because the application is not code-si
 
 ## Mathematical model
 
-The application solves initial-history problems of the form
+DDE Solver handles scalar delay differential equations with one or two constant delays:
 
-\[
-y'(t) = f\!\left(t, y(t), y(t-\tau_1), y(t-\tau_2)\right), \quad t \ge 0,
-\]
+```math
+\frac{dy(t)}{dt}
+=
+f\left(t,\;y(t),\;y(t-\tau_1),\;y(t-\tau_2)\right),
+\qquad t \ge 0.
+```
 
-\[
-y(t) = \varphi(t), \quad t \le 0.
-\]
+Before the initial time, the solution is defined by a history function:
 
-The user interface currently provides these right-hand-side templates:
+```math
+y(t)=\varphi(t), \qquad t \le 0.
+```
 
-\[
-y'(t)=a\,y(t-\tau),
-\]
+The application provides three right-hand-side templates.
 
-\[
-y'(t)=a\,y(t-\tau)+b\,y(t),
-\]
+**One delay:**
 
-\[
-y'(t)=a\,y(t-\tau_1)+b\,y(t-\tau_2).
-\]
+```math
+\frac{dy(t)}{dt}=a\,y(t-\tau).
+```
 
-Expressions for the history and exact solution are entered using exp4j syntax, for example `exp(0.4*t)`.
+**One delay and the current state:**
+
+```math
+\frac{dy(t)}{dt}
+=
+a\,y(t-\tau)+b\,y(t).
+```
+
+**Two delays:**
+
+```math
+\frac{dy(t)}{dt}
+=
+a\,y(t-\tau_1)+b\,y(t-\tau_2).
+```
+
+Delayed values between grid points are obtained by linear interpolation. The integration step must be positive and must not exceed the smallest active delay.
 
 ## Quick example
 
