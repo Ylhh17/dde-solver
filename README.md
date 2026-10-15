@@ -106,7 +106,7 @@ After launching the application:
 | Preset | Model | Exact solution |
 |---|---|---|
 | Basic | One delayed term with decaying dynamics | Not provided |
-| Exact: one delay | \(y'(t)=a\,y(t-\tau)\) | `exp(0.4*t)` |
+| Exact: one delay | `y′(t) = a·y(t−τ)` | `exp(0.4*t)` |
 | Exact: delay and state | Delayed and current-state terms | `exp(0.3*t)` |
 | Exact: two delays | Two delayed terms | `exp(0.3*t)` |
 
